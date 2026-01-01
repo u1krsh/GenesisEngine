@@ -1,6 +1,5 @@
 #include "Camera.h"
 #include <iostream>
-#include <cmath>
 
 namespace Genesis {
 
@@ -18,11 +17,11 @@ void FPSCamera::ProcessMouseLook(float deltaX, float deltaY) {
     m_pitch -= deltaY;  // Inverted: moving mouse up should look up (negative Y)
 
     // Clamp pitch to prevent camera flip
-    m_pitch = Clamp(m_pitch, m_minPitch, m_maxPitch);
+    m_pitch = glm::clamp(m_pitch, m_minPitch, m_maxPitch);
 
     // Keep yaw in reasonable range (optional, prevents float overflow over long sessions)
-    while (m_yaw > 360.0f) m_yaw -= 360.0f;
-    while (m_yaw < -360.0f) m_yaw += 360.0f;
+    if (m_yaw > 360.0f) m_yaw -= 360.0f;
+    if (m_yaw < -360.0f) m_yaw += 360.0f;
 
     // Update direction vectors
     UpdateVectors();
@@ -39,11 +38,8 @@ void FPSCamera::ProcessMovement(bool forward, bool backward, bool left, bool rig
     float velocity = speed * deltaTime;
 
     // Calculate movement direction on XZ plane (true FPS style - no flying)
-    Vec3 forwardXZ = {m_forward.x, 0.0f, m_forward.z};
-    forwardXZ.Normalize();
-
-    Vec3 rightXZ = {m_right.x, 0.0f, m_right.z};
-    rightXZ.Normalize();
+    Vec3 forwardXZ = Math::Normalize(Vec3(m_forward.x, 0.0f, m_forward.z));
+    Vec3 rightXZ = Math::Normalize(Vec3(m_right.x, 0.0f, m_right.z));
 
     // Apply movement
     if (forward) {
@@ -74,7 +70,7 @@ void FPSCamera::Update() {
 }
 
 void FPSCamera::SetPitch(float pitch) {
-    m_pitch = Clamp(pitch, m_minPitch, m_maxPitch);
+    m_pitch = glm::clamp(pitch, m_minPitch, m_maxPitch);
     UpdateVectors();
 }
 
@@ -82,47 +78,40 @@ void FPSCamera::SetPitchConstraints(float minPitch, float maxPitch) {
     m_minPitch = minPitch;
     m_maxPitch = maxPitch;
     // Re-clamp current pitch
-    m_pitch = Clamp(m_pitch, m_minPitch, m_maxPitch);
+    m_pitch = glm::clamp(m_pitch, m_minPitch, m_maxPitch);
     UpdateVectors();
 }
 
 Mat4 FPSCamera::GetViewMatrix() const {
-    Vec3 target = m_position + m_forward;
-    return Mat4::LookAt(m_position, target, m_worldUp);
+    return Math::LookAt(m_position, m_position + m_forward, m_worldUp);
 }
 
 Mat4 FPSCamera::GetProjectionMatrix() const {
-    return Mat4::Perspective(DegreesToRadians(m_fov), m_aspectRatio, m_nearPlane, m_farPlane);
+    return Math::Perspective(Math::Radians(m_fov), m_aspectRatio, m_nearPlane, m_farPlane);
 }
 
 void FPSCamera::UpdateVectors() {
     // Calculate new forward vector from yaw and pitch
-    float yawRad = DegreesToRadians(m_yaw);
-    float pitchRad = DegreesToRadians(m_pitch);
+    float yawRad = Math::Radians(m_yaw);
+    float pitchRad = Math::Radians(m_pitch);
 
     Vec3 forward;
-    forward.x = std::cos(yawRad) * std::cos(pitchRad);
-    forward.y = std::sin(pitchRad);
-    forward.z = std::sin(yawRad) * std::cos(pitchRad);
-    m_forward = forward.Normalized();
+    forward.x = cos(yawRad) * cos(pitchRad);
+    forward.y = sin(pitchRad);
+    forward.z = sin(yawRad) * cos(pitchRad);
+    m_forward = Math::Normalize(forward);
 
     // Recalculate right and up vectors
-    m_right = Vec3::Cross(m_forward, m_worldUp).Normalized();
-    m_up = Vec3::Cross(m_right, m_forward).Normalized();
-}
-
-float FPSCamera::Clamp(float value, float min, float max) const {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
+    m_right = Math::Normalize(Math::Cross(m_forward, m_worldUp));
+    m_up = Math::Normalize(Math::Cross(m_right, m_forward));
 }
 
 void FPSCamera::PrintDebugInfo() const {
     std::cout << "=== FPS Camera Debug ===" << std::endl;
-    std::cout << "Position: (" << m_position.x << ", " << m_position.y << ", " << m_position.z << ")" << std::endl;
-    std::cout << "Forward:  (" << m_forward.x << ", " << m_forward.y << ", " << m_forward.z << ")" << std::endl;
-    std::cout << "Right:    (" << m_right.x << ", " << m_right.y << ", " << m_right.z << ")" << std::endl;
-    std::cout << "Up:       (" << m_up.x << ", " << m_up.y << ", " << m_up.z << ")" << std::endl;
+    std::cout << "Position: " << Math::ToString(m_position) << std::endl;
+    std::cout << "Forward:  " << Math::ToString(m_forward) << std::endl;
+    std::cout << "Right:    " << Math::ToString(m_right) << std::endl;
+    std::cout << "Up:       " << Math::ToString(m_up) << std::endl;
     std::cout << "Yaw: " << m_yaw << "° | Pitch: " << m_pitch << "°" << std::endl;
     std::cout << "Speed: " << m_moveSpeed << " | Sprint: " << m_sprintMultiplier << "x" << std::endl;
     std::cout << "FOV: " << m_fov << "° | Aspect: " << m_aspectRatio << std::endl;

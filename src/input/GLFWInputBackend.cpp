@@ -49,13 +49,13 @@ void GLFWInputBackend::Update() {
     m_keysPrevious = m_keysCurrent;
     m_mouseButtonsPrevious = m_mouseButtonsCurrent;
 
-    // Calculate mouse delta
-    m_mouseDeltaX = m_mouseX - m_lastMouseX;
-    m_mouseDeltaY = m_mouseY - m_lastMouseY;
-    m_lastMouseX = m_mouseX;
-    m_lastMouseY = m_mouseY;
+    // Transfer accumulated mouse delta and reset accumulator
+    m_mouseDeltaX = m_accumulatedDeltaX;
+    m_mouseDeltaY = m_accumulatedDeltaY;
+    m_accumulatedDeltaX = 0.0;
+    m_accumulatedDeltaY = 0.0;
 
-    // Reset first mouse flag after first frame
+    // Handle first mouse frame (avoid jump when cursor is first captured)
     if (m_firstMouse) {
         m_mouseDeltaX = 0.0;
         m_mouseDeltaY = 0.0;
@@ -349,6 +349,40 @@ static MouseButton FromGLFWMouseButton(int glfwButton) {
 }
 
 // ============================================================================
+// Forward Key Events (used by Engine when it intercepts callbacks)
+// ============================================================================
+void GLFWInputBackend::ForwardKeyEvent(int glfwKey, int action) {
+    KeyCode keyCode = FromGLFWKey(glfwKey);
+    if (keyCode == KeyCode::Unknown) return;
+
+    size_t index = static_cast<size_t>(keyCode);
+    if (index < m_keysCurrent.size()) {
+        m_keysCurrent[index] = (action != GLFW_RELEASE);
+    }
+}
+
+void GLFWInputBackend::ForwardMouseButtonEvent(int glfwButton, int action) {
+    MouseButton mb = FromGLFWMouseButton(glfwButton);
+    if (mb == MouseButton::Unknown) return;
+
+    size_t index = static_cast<size_t>(mb);
+    if (index < m_mouseButtonsCurrent.size()) {
+        m_mouseButtonsCurrent[index] = (action != GLFW_RELEASE);
+    }
+}
+
+void GLFWInputBackend::ForwardCursorPosEvent(double xpos, double ypos) {
+    // Accumulate delta from cursor movement
+    if (!m_firstMouse) {
+        m_accumulatedDeltaX += xpos - m_mouseX;
+        m_accumulatedDeltaY += ypos - m_mouseY;
+    }
+
+    m_mouseX = xpos;
+    m_mouseY = ypos;
+}
+
+// ============================================================================
 // GLFW Callbacks
 // ============================================================================
 void GLFWInputBackend::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -377,6 +411,13 @@ void GLFWInputBackend::MouseButtonCallback(GLFWwindow* window, int button, int a
 
 void GLFWInputBackend::CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
     if (!s_instance) return;
+
+    // Accumulate delta from cursor movement
+    if (!s_instance->m_firstMouse) {
+        s_instance->m_accumulatedDeltaX += xpos - s_instance->m_mouseX;
+        s_instance->m_accumulatedDeltaY += ypos - s_instance->m_mouseY;
+    }
+
     s_instance->m_mouseX = xpos;
     s_instance->m_mouseY = ypos;
 }

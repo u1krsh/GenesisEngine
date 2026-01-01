@@ -1,4 +1,5 @@
 #include "InputManager.h"
+#include "gui/Console.h"
 #include <iostream>
 
 namespace Genesis {
@@ -153,37 +154,19 @@ bool InputManager::IsCursorLocked() const {
 }
 
 void InputManager::HandleMouseLocking() {
+    // Don't capture cursor if console is open
+    if (GUI::Console::Instance().IsOpen()) {
+        return;
+    }
+
     if (IsMouseButtonPressed(MouseButton::Left)) {
         SetCursorLocked(true);
-        std::cout << "[Input] Mouse captured (cursor locked)" << std::endl;
-    } else if (IsMouseButtonPressed(MouseButton::Right)) {
-        SetCursorLocked(false);
-        std::cout << "[Input] Mouse released (cursor unlocked)" << std::endl;
     }
 }
 
 void InputManager::LogWASDKeys() {
-    if (IsKeyPressed(KeyCode::W)) {
-        std::cout << "[Input] W pressed (Move Forward)" << std::endl;
-    }
-    if (IsKeyPressed(KeyCode::A)) {
-        std::cout << "[Input] A pressed (Move Left)" << std::endl;
-    }
-    if (IsKeyPressed(KeyCode::S)) {
-        std::cout << "[Input] S pressed (Move Backward)" << std::endl;
-    }
-    if (IsKeyPressed(KeyCode::D)) {
-        std::cout << "[Input] D pressed (Move Right)" << std::endl;
-    }
-    if (IsKeyPressed(KeyCode::Space)) {
-        std::cout << "[Input] Space pressed (Jump)" << std::endl;
-    }
-    if (IsKeyPressed(KeyCode::LeftShift)) {
-        std::cout << "[Input] Shift pressed (Sprint)" << std::endl;
-    }
-    if (IsKeyPressed(KeyCode::LeftControl)) {
-        std::cout << "[Input] Ctrl pressed (Crouch)" << std::endl;
-    }
+    // Disabled to prevent console spam
+    // Key input logging can be enabled via ge_debug_input convar if needed
 }
 
 // ============================================================================

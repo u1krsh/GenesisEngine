@@ -1,5 +1,6 @@
 #include "Shader.h"
 #include <glad/glad.h>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -189,7 +190,10 @@ void Shader::SetFloat(const std::string& name, float value) {
 }
 
 void Shader::SetVec2(const std::string& name, const Vec2& value) {
-    SetVec2(name, value.x, value.y);
+    int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform2fv(location, 1, glm::value_ptr(value));
+    }
 }
 
 void Shader::SetVec2(const std::string& name, float x, float y) {
@@ -200,7 +204,10 @@ void Shader::SetVec2(const std::string& name, float x, float y) {
 }
 
 void Shader::SetVec3(const std::string& name, const Vec3& value) {
-    SetVec3(name, value.x, value.y, value.z);
+    int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform3fv(location, 1, glm::value_ptr(value));
+    }
 }
 
 void Shader::SetVec3(const std::string& name, float x, float y, float z) {
@@ -211,7 +218,10 @@ void Shader::SetVec3(const std::string& name, float x, float y, float z) {
 }
 
 void Shader::SetVec4(const std::string& name, const Vec4& value) {
-    SetVec4(name, value.x, value.y, value.z, value.w);
+    int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform4fv(location, 1, glm::value_ptr(value));
+    }
 }
 
 void Shader::SetVec4(const std::string& name, float x, float y, float z, float w) {
@@ -224,14 +234,14 @@ void Shader::SetVec4(const std::string& name, float x, float y, float z, float w
 void Shader::SetMat3(const std::string& name, const Mat3& value, bool transpose) {
     int location = GetUniformLocation(name);
     if (location != -1) {
-        glUniformMatrix3fv(location, 1, transpose ? GL_TRUE : GL_FALSE, value.Data());
+        glUniformMatrix3fv(location, 1, transpose ? GL_TRUE : GL_FALSE, glm::value_ptr(value));
     }
 }
 
 void Shader::SetMat4(const std::string& name, const Mat4& value, bool transpose) {
     int location = GetUniformLocation(name);
     if (location != -1) {
-        glUniformMatrix4fv(location, 1, transpose ? GL_TRUE : GL_FALSE, value.Data());
+        glUniformMatrix4fv(location, 1, transpose ? GL_TRUE : GL_FALSE, glm::value_ptr(value));
     }
 }
 

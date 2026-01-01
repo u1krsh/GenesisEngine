@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <chrono>
 #include <vector>
-#include "camera/Camera.h"  // For Vec3, Mat4
+#include "math/Math.h"  // For Vec2, Vec3, Vec4, Mat3, Mat4
 
 namespace Genesis {
 
@@ -25,26 +25,6 @@ enum class UniformType {
     Sampler2D
 };
 
-struct Vec2 {
-    float x = 0.0f, y = 0.0f;
-    Vec2() = default;
-    Vec2(float x, float y) : x(x), y(y) {}
-};
-
-struct Vec4 {
-    float x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f;
-    Vec4() = default;
-    Vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
-};
-
-struct Mat3 {
-    float m[9] = {
-        1, 0, 0,
-        0, 1, 0,
-        0, 0, 1
-    };
-    const float* Data() const { return m; }
-};
 
 // ============================================================================
 // Uniform Info - Cached uniform metadata

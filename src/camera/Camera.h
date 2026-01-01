@@ -1,128 +1,11 @@
 #pragma once
 
-#include <cmath>
+#include "math/Math.h"
 
 namespace Genesis {
 
 // ============================================================================
-// Simple 3D Vector (minimal, no external dependencies)
-// ============================================================================
-struct Vec3 {
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-
-    Vec3() = default;
-    Vec3(float x, float y, float z) : x(x), y(y), z(z) {}
-
-    Vec3 operator+(const Vec3& other) const { return {x + other.x, y + other.y, z + other.z}; }
-    Vec3 operator-(const Vec3& other) const { return {x - other.x, y - other.y, z - other.z}; }
-    Vec3 operator*(float scalar) const { return {x * scalar, y * scalar, z * scalar}; }
-    Vec3 operator/(float scalar) const { return {x / scalar, y / scalar, z / scalar}; }
-
-    Vec3& operator+=(const Vec3& other) { x += other.x; y += other.y; z += other.z; return *this; }
-    Vec3& operator-=(const Vec3& other) { x -= other.x; y -= other.y; z -= other.z; return *this; }
-    Vec3& operator*=(float scalar) { x *= scalar; y *= scalar; z *= scalar; return *this; }
-
-    float Length() const { return std::sqrt(x * x + y * y + z * z); }
-    float LengthSquared() const { return x * x + y * y + z * z; }
-
-    Vec3 Normalized() const {
-        float len = Length();
-        if (len > 0.0001f) return *this / len;
-        return {0.0f, 0.0f, 0.0f};
-    }
-
-    void Normalize() {
-        float len = Length();
-        if (len > 0.0001f) {
-            x /= len; y /= len; z /= len;
-        }
-    }
-
-    static float Dot(const Vec3& a, const Vec3& b) {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
-    }
-
-    static Vec3 Cross(const Vec3& a, const Vec3& b) {
-        return {
-            a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x
-        };
-    }
-};
-
-// ============================================================================
-// 4x4 Matrix (column-major, OpenGL compatible)
-// ============================================================================
-struct Mat4 {
-    float m[16] = {
-        1, 0, 0, 0,
-        0, 1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1
-    };
-
-    Mat4() = default;
-
-    // Access element at row r, column c
-    float& At(int r, int c) { return m[c * 4 + r]; }
-    float At(int r, int c) const { return m[c * 4 + r]; }
-
-    // Get pointer to data (for OpenGL)
-    const float* Data() const { return m; }
-    float* Data() { return m; }
-
-    static Mat4 Identity() {
-        return Mat4();
-    }
-
-    static Mat4 LookAt(const Vec3& eye, const Vec3& target, const Vec3& worldUp) {
-        Vec3 forward = (target - eye).Normalized();
-        Vec3 right = Vec3::Cross(forward, worldUp).Normalized();
-        Vec3 up = Vec3::Cross(right, forward);
-
-        Mat4 result;
-        result.At(0, 0) = right.x;
-        result.At(0, 1) = right.y;
-        result.At(0, 2) = right.z;
-        result.At(0, 3) = -Vec3::Dot(right, eye);
-
-        result.At(1, 0) = up.x;
-        result.At(1, 1) = up.y;
-        result.At(1, 2) = up.z;
-        result.At(1, 3) = -Vec3::Dot(up, eye);
-
-        result.At(2, 0) = -forward.x;
-        result.At(2, 1) = -forward.y;
-        result.At(2, 2) = -forward.z;
-        result.At(2, 3) = Vec3::Dot(forward, eye);
-
-        result.At(3, 0) = 0.0f;
-        result.At(3, 1) = 0.0f;
-        result.At(3, 2) = 0.0f;
-        result.At(3, 3) = 1.0f;
-
-        return result;
-    }
-
-    static Mat4 Perspective(float fovRadians, float aspect, float nearPlane, float farPlane) {
-        float tanHalfFov = std::tan(fovRadians / 2.0f);
-
-        Mat4 result;
-        for (int i = 0; i < 16; i++) result.m[i] = 0.0f;
-
-        result.At(0, 0) = 1.0f / (aspect * tanHalfFov);
-        result.At(1, 1) = 1.0f / tanHalfFov;
-        result.At(2, 2) = -(farPlane + nearPlane) / (farPlane - nearPlane);
-        result.At(2, 3) = -(2.0f * farPlane * nearPlane) / (farPlane - nearPlane);
-        result.At(3, 2) = -1.0f;
-
-        return result;
-    }
-};
-
-// ============================================================================
-// FPS Camera - First Person Shooter style camera
+// FPS Camera - First Person Shooter style camera using GLM
 // ============================================================================
 class FPSCamera {
 public:
@@ -166,7 +49,7 @@ public:
     // ========================================================================
 
     void SetPosition(const Vec3& position) { m_position = position; }
-    void SetPosition(float x, float y, float z) { m_position = {x, y, z}; }
+    void SetPosition(float x, float y, float z) { m_position = Vec3(x, y, z); }
 
     void SetYaw(float yaw) { m_yaw = yaw; UpdateVectors(); }
     void SetPitch(float pitch);
@@ -211,20 +94,18 @@ public:
 
 private:
     void UpdateVectors();
-    float DegreesToRadians(float degrees) const { return degrees * 3.14159265359f / 180.0f; }
-    float Clamp(float value, float min, float max) const;
 
 private:
     // Position
-    Vec3 m_position{0.0f, 0.0f, 0.0f};
+    Vec3 m_position = Vec3(0.0f, 0.0f, 0.0f);
 
     // Direction vectors
-    Vec3 m_forward{0.0f, 0.0f, -1.0f};
-    Vec3 m_right{1.0f, 0.0f, 0.0f};
-    Vec3 m_up{0.0f, 1.0f, 0.0f};
+    Vec3 m_forward = Vec3(0.0f, 0.0f, -1.0f);
+    Vec3 m_right = Vec3(1.0f, 0.0f, 0.0f);
+    Vec3 m_up = Vec3(0.0f, 1.0f, 0.0f);
 
     // World up (for calculations)
-    Vec3 m_worldUp{0.0f, 1.0f, 0.0f};
+    Vec3 m_worldUp = Vec3(0.0f, 1.0f, 0.0f);
 
     // Euler angles (in degrees)
     float m_yaw = -90.0f;    // Yaw: rotation around Y axis (look left/right)

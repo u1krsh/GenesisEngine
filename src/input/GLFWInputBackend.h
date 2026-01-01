@@ -40,6 +40,11 @@ public:
     void SetCursorMode(bool locked) override;
     bool IsCursorLocked() const override;
 
+    // Forward key events from external callbacks (used by Engine)
+    void ForwardKeyEvent(int glfwKey, int action);
+    void ForwardMouseButtonEvent(int glfwButton, int action);
+    void ForwardCursorPosEvent(double xpos, double ypos);
+
 private:
     // Convert our KeyCode to GLFW key
     static int ToGLFWKey(KeyCode key);
@@ -66,7 +71,9 @@ private:
     double m_mouseX = 0.0, m_mouseY = 0.0;
     double m_lastMouseX = 0.0, m_lastMouseY = 0.0;
     double m_mouseDeltaX = 0.0, m_mouseDeltaY = 0.0;
+    double m_accumulatedDeltaX = 0.0, m_accumulatedDeltaY = 0.0;  // Accumulated between updates
     bool m_firstMouse = true;
+    bool m_mouseDeltaConsumed = true;  // Track if delta was consumed
 
     // Scroll
     double m_scrollDelta = 0.0;
