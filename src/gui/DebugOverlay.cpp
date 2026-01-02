@@ -1,6 +1,7 @@
 #include "DebugOverlay.h"
 #include "core/Engine.h"
 #include "core/Time.h"
+#include "renderer/world/StaticWorldRenderer.h"
 #include <sstream>
 #include <iomanip>
 
@@ -8,8 +9,11 @@ namespace Genesis {
 namespace GUI {
 
 void DebugOverlay::Render(int screenWidth, int screenHeight) {
+    // Check convar OR force visible flag
     auto* showInfo = Console::Instance().FindConVar("ge_showinfo");
-    if (!showInfo || !showInfo->GetBool()) return;
+    bool showViaConvar = showInfo && showInfo->GetBool();
+
+    if (!showViaConvar && !m_forceVisible) return;
 
     auto& renderer = GUIRenderer::Instance();
     auto& engine = Engine::Instance();
@@ -21,7 +25,7 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
 
     // Background panel - positioned at TOP LEFT
     float panelWidth = 280;
-    float panelHeight = lineHeight * 13 + padding * 2;
+    float panelHeight = lineHeight * 20 + padding * 2;  // Expanded for render stats
     Rect panelRect(10, 10, panelWidth, panelHeight);
 
     // Windows 7 style panel with gradient
@@ -106,6 +110,47 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
     // Time scale
     oss.str("");
     oss << "Time Scale: " << std::setprecision(2) << time.GetTimeScale();
+    renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+    y += lineHeight + 4;
+
+    // Render stats section header
+    renderer.DrawText("-- Render Stats --", x, y, Colors::AccentLight, 1.0f);
+    y += lineHeight;
+
+    // Get stats from StaticWorldRenderer
+    auto& worldRenderer = StaticWorldRenderer::Instance();
+
+    // Objects and draw calls
+    oss.str("");
+    oss << "Objects: " << worldRenderer.GetObjectsRendered();
+    renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+    y += lineHeight;
+
+    oss.str("");
+    oss << "Draw Calls: " << worldRenderer.GetDrawCalls();
+    renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+    y += lineHeight;
+
+    // Triangle count
+    oss.str("");
+    uint32_t triangles = worldRenderer.GetTrianglesRendered();
+    if (triangles > 1000) {
+        oss << "Triangles: " << std::setprecision(1) << (triangles / 1000.0f) << "K";
+    } else {
+        oss << "Triangles: " << triangles;
+    }
+    renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+    y += lineHeight;
+
+    // Material switches
+    oss.str("");
+    oss << "Material Switches: " << worldRenderer.GetMaterialSwitches();
+    renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+    y += lineHeight;
+
+    // Total world objects
+    oss.str("");
+    oss << "World Objects: " << worldRenderer.GetObjectCount();
     renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
 }
 

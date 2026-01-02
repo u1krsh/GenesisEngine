@@ -18,8 +18,14 @@ public:
 
     void Render(int screenWidth, int screenHeight);
 
+    // Direct control - bypasses convar
+    void SetVisible(bool visible) { m_forceVisible = visible; }
+    bool IsVisible() const { return m_forceVisible; }
+    void Toggle() { m_forceVisible = !m_forceVisible; }
+
 private:
     DebugOverlay() = default;
+    bool m_forceVisible = false;
 };
 
 } // namespace GUI

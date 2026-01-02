@@ -328,10 +328,12 @@ void GUIRenderer::EndFrame() {
 void GUIRenderer::Flush() {
     if (m_vertices.empty()) return;
 
-    // Setup state
+    // Setup state for 2D GUI rendering
     glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);  // Don't write to depth buffer
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);  // GUI quads may have any winding
 
     // Create orthographic projection
     Mat4 projection = glm::ortho(0.0f, (float)m_screenWidth, (float)m_screenHeight, 0.0f, -1.0f, 1.0f);
@@ -349,8 +351,11 @@ void GUIRenderer::Flush() {
     glBindVertexArray(0);
     m_shader->Unbind();
 
+    // Restore state
     glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
 
     m_vertices.clear();
 }
@@ -419,8 +424,10 @@ void GUIRenderer::DrawText(const std::string& text, float x, float y, const Vec4
 
     // Setup for text rendering
     glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);
 
     Mat4 projection = glm::ortho(0.0f, (float)m_screenWidth, (float)m_screenHeight, 0.0f, -1.0f, 1.0f);
 
@@ -468,7 +475,11 @@ void GUIRenderer::DrawText(const std::string& text, float x, float y, const Vec4
 
     m_vertices.clear();
     m_shader->Unbind();
+
+    // Restore state
     glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
 }
 
 void GUIRenderer::DrawTextCentered(const std::string& text, const Rect& rect, const Vec4& color, float scale) {
