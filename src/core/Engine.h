@@ -53,11 +53,13 @@ public:
     using RenderCallback = std::function<void(double interpolation)>;
     using InitCallback = std::function<bool()>;
     using ShutdownCallback = std::function<void()>;
+    using InputCallback = std::function<void(double deltaTime)>;
 
     void SetOnInit(InitCallback callback) { m_onInit = callback; }
     void SetOnShutdown(ShutdownCallback callback) { m_onShutdown = callback; }
     void SetOnUpdate(UpdateCallback callback) { m_onUpdate = callback; }
     void SetOnRender(RenderCallback callback) { m_onRender = callback; }
+    void SetOnInput(InputCallback callback) { m_onInput = callback; }  // Called once per frame
 
     // ========================================================================
     // Accessors
@@ -113,6 +115,7 @@ private:
     ShutdownCallback m_onShutdown;
     UpdateCallback m_onUpdate;
     RenderCallback m_onRender;
+    InputCallback m_onInput;
 
     // Fixed timestep accumulator
     double m_accumulator = 0.0;

@@ -104,9 +104,11 @@ void Engine::Run() {
             deltaTime = m_config.maxFrameSkip * m_config.fixedTimestep;
         }
 
-        // Poll events and update input FIRST
-        glfwPollEvents();
+        // Update input state FIRST (saves previous state before new events)
         InputManager::Instance().Update();
+
+        // Poll events - this triggers callbacks that update current state
+        glfwPollEvents();
 
         // Check if console is open - pause game when open
         bool consolePaused = GUI::Console::Instance().IsOpen();
@@ -128,6 +130,11 @@ void Engine::Run() {
         // Process input (mouse look happens per-frame, but not when console is open)
         if (!consolePaused) {
             ProcessInput();
+
+            // Call per-frame input callback (for mouse look, etc.)
+            if (m_onInput) {
+                m_onInput(deltaTime);
+            }
         }
 
         // Fixed timestep updates - SKIP when console is open (pause the game)
@@ -320,30 +327,13 @@ void Engine::ProcessInput() {
         Stop();
     }
 
-    // Mouse look - always process when this function is called
-    // (console state is checked before calling ProcessInput)
-    double dx, dy;
-    input.GetMouseDelta(dx, dy);
-    if (dx != 0.0 || dy != 0.0) {
-        m_camera.ProcessMouseLook(static_cast<float>(dx), static_cast<float>(dy));
-    }
+    // Note: Mouse look and movement are now handled by the PlayerController
+    // via the game's Player class. The engine no longer directly moves the camera.
 }
 
 void Engine::Update(double deltaTime) {
-    auto& input = InputManager::Instance();
-
-    // Camera movement
-    bool forward = input.IsActionDown(GameAction::MoveForward);
-    bool backward = input.IsActionDown(GameAction::MoveBackward);
-    bool left = input.IsActionDown(GameAction::MoveLeft);
-    bool right = input.IsActionDown(GameAction::MoveRight);
-    bool up = input.IsActionDown(GameAction::Jump);
-    bool down = input.IsActionDown(GameAction::Crouch);
-
-    m_camera.SetSprinting(input.IsActionDown(GameAction::Sprint));
-    m_camera.ProcessMovement(forward, backward, left, right, up, down,
-                             static_cast<float>(deltaTime));
-    m_camera.Update();
+    // Note: Player movement and camera control are now handled by the PlayerController
+    // via the game's Player class. The engine's Update only calls the user callback.
 
     // Call user update callback
     if (m_onUpdate) {

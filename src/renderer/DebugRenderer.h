@@ -46,6 +46,7 @@ public:
     void DrawAxes(float length);
     void DrawCube(float x, float y, float z, float size, float r, float g, float b);
     void DrawWireCube(float x, float y, float z, float size, float r, float g, float b);
+    void DrawWireBox(float x, float y, float z, float width, float height, float depth, float r, float g, float b);
     void DrawFloor(float size, float y, float r, float g, float b);
 
     // Render all accumulated primitives

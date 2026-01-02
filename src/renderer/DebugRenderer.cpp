@@ -183,25 +183,31 @@ void DebugRenderer::DrawCube(float x, float y, float z, float size, float r, flo
 }
 
 void DebugRenderer::DrawWireCube(float x, float y, float z, float size, float r, float g, float b) {
-    float hs = size / 2.0f;
+    DrawWireBox(x, y, z, size, size, size, r, g, b);
+}
+
+void DebugRenderer::DrawWireBox(float x, float y, float z, float width, float height, float depth, float r, float g, float b) {
+    float hw = width / 2.0f;
+    float hh = height / 2.0f;
+    float hd = depth / 2.0f;
 
     // Bottom face edges
-    DrawLine(x - hs, y - hs, z - hs, x + hs, y - hs, z - hs, r, g, b);
-    DrawLine(x + hs, y - hs, z - hs, x + hs, y - hs, z + hs, r, g, b);
-    DrawLine(x + hs, y - hs, z + hs, x - hs, y - hs, z + hs, r, g, b);
-    DrawLine(x - hs, y - hs, z + hs, x - hs, y - hs, z - hs, r, g, b);
+    DrawLine(x - hw, y - hh, z - hd, x + hw, y - hh, z - hd, r, g, b);
+    DrawLine(x + hw, y - hh, z - hd, x + hw, y - hh, z + hd, r, g, b);
+    DrawLine(x + hw, y - hh, z + hd, x - hw, y - hh, z + hd, r, g, b);
+    DrawLine(x - hw, y - hh, z + hd, x - hw, y - hh, z - hd, r, g, b);
 
     // Top face edges
-    DrawLine(x - hs, y + hs, z - hs, x + hs, y + hs, z - hs, r, g, b);
-    DrawLine(x + hs, y + hs, z - hs, x + hs, y + hs, z + hs, r, g, b);
-    DrawLine(x + hs, y + hs, z + hs, x - hs, y + hs, z + hs, r, g, b);
-    DrawLine(x - hs, y + hs, z + hs, x - hs, y + hs, z - hs, r, g, b);
+    DrawLine(x - hw, y + hh, z - hd, x + hw, y + hh, z - hd, r, g, b);
+    DrawLine(x + hw, y + hh, z - hd, x + hw, y + hh, z + hd, r, g, b);
+    DrawLine(x + hw, y + hh, z + hd, x - hw, y + hh, z + hd, r, g, b);
+    DrawLine(x - hw, y + hh, z + hd, x - hw, y + hh, z - hd, r, g, b);
 
     // Vertical edges
-    DrawLine(x - hs, y - hs, z - hs, x - hs, y + hs, z - hs, r, g, b);
-    DrawLine(x + hs, y - hs, z - hs, x + hs, y + hs, z - hs, r, g, b);
-    DrawLine(x + hs, y - hs, z + hs, x + hs, y + hs, z + hs, r, g, b);
-    DrawLine(x - hs, y - hs, z + hs, x - hs, y + hs, z + hs, r, g, b);
+    DrawLine(x - hw, y - hh, z - hd, x - hw, y + hh, z - hd, r, g, b);
+    DrawLine(x + hw, y - hh, z - hd, x + hw, y + hh, z - hd, r, g, b);
+    DrawLine(x + hw, y - hh, z + hd, x + hw, y + hh, z + hd, r, g, b);
+    DrawLine(x - hw, y - hh, z + hd, x - hw, y + hh, z + hd, r, g, b);
 }
 
 void DebugRenderer::DrawFloor(float size, float y, float r, float g, float b) {

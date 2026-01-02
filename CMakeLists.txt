@@ -51,6 +51,9 @@ set(ENGINE_SOURCES
     # Camera
     src/camera/Camera.cpp
 
+    # Player
+    src/player/PlayerController.cpp
+
     # Renderer
     src/renderer/shader/Shader.cpp
     src/renderer/DebugRenderer.cpp
@@ -79,6 +82,9 @@ set(ENGINE_HEADERS
 
     # Camera
     src/camera/Camera.h
+
+    # Player
+    src/player/PlayerController.h
 
     # Renderer
     src/renderer/shader/Shader.h
