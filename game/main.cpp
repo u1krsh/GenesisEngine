@@ -7,7 +7,8 @@
 #include "renderer/DebugRenderer.h"
 #include "renderer/shader/Shader.h"
 #include "renderer/Mesh.h"
-#include "renderer/Material.h"  // New material system
+#include "renderer/Material.h"
+#include "renderer/world/StaticWorldRenderer.h"  // Static world rendering system
 #include "world/WorldCollision.h"
 #include "Player.h"
 
@@ -22,21 +23,9 @@ static std::shared_ptr<Shader> g_basicShader;
 static Game::Player g_player;
 static bool g_showCollisionDebug = false;
 
-// Demo meshes using the new mesh abstraction
-static MeshPtr g_originCube;
-static MeshPtr g_sphere;
-static MeshPtr g_groundPlane;
-static MeshPtr g_cylinder;
+// Debug visualization meshes (grid, axes)
 static MeshPtr g_gridMesh;
 static MeshPtr g_axesMesh;
-
-// ============================================================================
-// Materials - Source Engine-style: One shader, many materials
-// ============================================================================
-static MaterialPtr g_matGround;
-static MaterialPtr g_matRedCube;
-static MaterialPtr g_matBlueSphere;
-static MaterialPtr g_matYellowCylinder;
 static MaterialPtr g_matDebug;
 
 // ============================================================================
@@ -213,53 +202,166 @@ bool OnInit() {
     }
 
     // ========================================================================
-    // Create meshes using the new mesh abstraction - no more touching VAO/VBO!
+    // Create debug visualization meshes
     // ========================================================================
-    LOG_INFO("Game", "Creating meshes with new mesh abstraction...");
-
-    // Create a cube at origin
-    g_originCube = MeshPrimitives::CreateCube(1.0f, "OriginCube");
-
-    // Create a sphere
-    g_sphere = MeshPrimitives::CreateSphere(0.5f, 24, 24, "DemoSphere");
-
-    // Create ground plane
-    g_groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
-
-    // Create a cylinder
-    g_cylinder = MeshPrimitives::CreateCylinder(0.3f, 1.5f, 16, "DemoCylinder");
-
-    // Create debug grid and axes using mesh primitives
     g_gridMesh = MeshPrimitives::CreateGrid(60.0f, 1.0f, Vec3(0.25f, 0.25f, 0.25f), "Grid");
     g_axesMesh = MeshPrimitives::CreateAxes(3.0f, "Axes");
 
-    LOG_INFO("Game", "Meshes created successfully!");
-
     // ========================================================================
-    // Create materials - Source Engine-style: shader defines "type", material defines "instance"
-    // One shader can be used by MANY materials with zero duplicate logic!
+    // Setup Materials - Source Engine-style
     // ========================================================================
-    LOG_INFO("Game", "Creating materials with Source-style material system...");
-
+    LOG_INFO("Game", "Creating materials...");
     auto& matLib = MaterialLibrary::Instance();
-
-    // Ground material - dark gray
-    g_matGround = matLib.CreateSolidColor("Ground", Vec3(0.12f, 0.12f, 0.15f));
-
-    // Red cube material
-    g_matRedCube = matLib.CreateSolidColor("RedCube", Vec3(0.8f, 0.2f, 0.2f));
-
-    // Blue sphere material
-    g_matBlueSphere = matLib.CreateSolidColor("BlueSphere", Vec3(0.2f, 0.6f, 0.9f));
-
-    // Yellow cylinder material
-    g_matYellowCylinder = matLib.CreateSolidColor("YellowCylinder", Vec3(0.9f, 0.7f, 0.2f));
 
     // Debug material (unlit, for grid/axes)
     g_matDebug = matLib.Create("Debug", g_debugShader);
     g_matDebug->SetCullMode(CullMode::Off);
 
-    LOG_INFO("Game", "Materials created successfully!");
+    // World materials
+    auto matFloor = matLib.CreateSolidColor("Floor", Vec3(0.12f, 0.12f, 0.15f));
+    auto matWallGray = matLib.CreateSolidColor("WallGray", Vec3(0.4f, 0.4f, 0.45f));
+    auto matWallBrick = matLib.CreateSolidColor("WallBrick", Vec3(0.6f, 0.3f, 0.25f));
+    auto matConcrete = matLib.CreateSolidColor("Concrete", Vec3(0.5f, 0.5f, 0.5f));
+    auto matRedCube = matLib.CreateSolidColor("RedCube", Vec3(0.8f, 0.2f, 0.2f));
+    auto matBlueSphere = matLib.CreateSolidColor("BlueSphere", Vec3(0.2f, 0.6f, 0.9f));
+    auto matYellowCylinder = matLib.CreateSolidColor("YellowCylinder", Vec3(0.9f, 0.7f, 0.2f));
+    auto matGreenPlatform = matLib.CreateSolidColor("GreenPlatform", Vec3(0.3f, 0.6f, 0.3f));
+    auto matStairs = matLib.CreateSolidColor("Stairs", Vec3(0.6f, 0.4f, 0.2f));
+
+    LOG_INFO("Game", "Materials created!");
+
+    // ========================================================================
+    // Setup Static World - Floors, Walls, Props
+    // ========================================================================
+    LOG_INFO("Game", "Building static world...");
+    auto& world = StaticWorldRenderer::Instance();
+    world.Clear();
+
+    // Create reusable meshes
+    auto cubeMesh = MeshPrimitives::CreateCube(1.0f, "Cube");
+    auto planeMesh = MeshPrimitives::CreatePlane(1.0f, 1.0f, 1, 1, "Plane");
+    auto sphereMesh = MeshPrimitives::CreateSphere(0.5f, 24, 24, "Sphere");
+    auto cylinderMesh = MeshPrimitives::CreateCylinder(0.3f, 1.5f, 16, "Cylinder");
+
+    // -------------------------------------------
+    // FLOOR - Large ground plane
+    // -------------------------------------------
+    auto groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
+    Mat4 floorTransform = glm::translate(Mat4(1.0f), Vec3(0.0f, -0.02f, 0.0f));
+    world.AddFloor(groundPlane, matFloor, floorTransform);
+
+    // -------------------------------------------
+    // ORIGIN CUBE - Reference marker
+    // -------------------------------------------
+    Mat4 cubeTransform = glm::translate(Mat4(1.0f), Vec3(0.0f, 0.5f, 0.0f));
+    world.AddProp("OriginCube", cubeMesh, matRedCube, cubeTransform);
+
+    // -------------------------------------------
+    // DEMO OBJECTS - Sphere and Cylinder
+    // -------------------------------------------
+    Mat4 sphereTransform = glm::translate(Mat4(1.0f), Vec3(-8.0f, 1.5f, 8.0f));
+    world.AddProp("DemoSphere", sphereMesh, matBlueSphere, sphereTransform);
+
+    Mat4 cylTransform = glm::translate(Mat4(1.0f), Vec3(-12.0f, 3.75f, 12.0f));
+    world.AddProp("DemoCylinder", cylinderMesh, matYellowCylinder, cylTransform);
+
+    // -------------------------------------------
+    // PLATFORMING AREA - Platforms at different heights
+    // -------------------------------------------
+    auto platformMesh = MeshPrimitives::CreateCube(2.0f, "Platform");
+
+    // Platform series
+    world.AddProp("Platform1", platformMesh, matGreenPlatform,
+        glm::translate(Mat4(1.0f), Vec3(-8.0f, 0.5f, 8.0f)));
+    world.AddProp("Platform2", platformMesh, matGreenPlatform,
+        glm::translate(Mat4(1.0f), Vec3(-8.0f, 1.5f, 12.0f)));
+    world.AddProp("Platform3", platformMesh, matGreenPlatform,
+        glm::translate(Mat4(1.0f), Vec3(-8.0f, 2.5f, 16.0f)));
+    world.AddProp("Platform4", platformMesh, matGreenPlatform,
+        glm::translate(Mat4(1.0f), Vec3(-12.0f, 2.5f, 16.0f)));
+    world.AddProp("Platform5", platformMesh, matGreenPlatform,
+        glm::translate(Mat4(1.0f), Vec3(-12.0f, 3.5f, 12.0f)));
+    world.AddProp("Platform6", platformMesh, matGreenPlatform,
+        glm::translate(Mat4(1.0f), Vec3(-12.0f, 1.0f, 8.0f)));
+
+    // -------------------------------------------
+    // STAIR AREA - Staircase going up
+    // -------------------------------------------
+    for (int i = 0; i < 8; i++) {
+        float x = 8.0f + i * 1.0f;
+        float y = (0.25f + i * 0.5f) / 2.0f;
+        float h = 0.25f + i * 0.5f;
+
+        Mat4 stairTransform = glm::translate(Mat4(1.0f), Vec3(x, y, 8.0f));
+        stairTransform = glm::scale(stairTransform, Vec3(1.0f, h, 2.0f));
+        world.AddStructural(cubeMesh, matStairs, stairTransform);
+    }
+
+    // Landing platform at top
+    Mat4 landingTransform = glm::translate(Mat4(1.0f), Vec3(16.5f, 2.0f, 8.0f));
+    landingTransform = glm::scale(landingTransform, Vec3(2.0f, 4.0f, 4.0f));
+    world.AddStructural(cubeMesh, matConcrete, landingTransform);
+
+    // -------------------------------------------
+    // CORRIDOR AREA - Hallway with walls
+    // -------------------------------------------
+    float corridorZ = -8.0f;
+
+    // Left wall
+    Mat4 leftWall = glm::translate(Mat4(1.0f), Vec3(-15.0f, 1.5f, corridorZ));
+    leftWall = glm::scale(leftWall, Vec3(20.0f, 3.0f, 0.5f));
+    world.AddWall(cubeMesh, matWallGray, leftWall);
+
+    // Right wall
+    Mat4 rightWall = glm::translate(Mat4(1.0f), Vec3(-15.0f, 1.5f, corridorZ + 3.0f));
+    rightWall = glm::scale(rightWall, Vec3(20.0f, 3.0f, 0.5f));
+    world.AddWall(cubeMesh, matWallGray, rightWall);
+
+    // End wall
+    Mat4 endWall = glm::translate(Mat4(1.0f), Vec3(-25.5f, 1.5f, corridorZ + 1.5f));
+    endWall = glm::scale(endWall, Vec3(0.5f, 3.0f, 3.5f));
+    world.AddWall(cubeMesh, matWallBrick, endWall);
+
+    // -------------------------------------------
+    // ROOM AREA - Enclosed space with furniture
+    // -------------------------------------------
+    float roomX = -20.0f;
+    float roomZ = -20.0f;
+
+    // Room walls
+    world.AddWall(cubeMesh, matWallBrick,
+        glm::scale(glm::translate(Mat4(1.0f), Vec3(roomX, 1.5f, roomZ - 4.75f)), Vec3(10.0f, 3.0f, 0.5f)));
+    world.AddWall(cubeMesh, matWallBrick,
+        glm::scale(glm::translate(Mat4(1.0f), Vec3(roomX, 1.5f, roomZ + 4.75f)), Vec3(10.0f, 3.0f, 0.5f)));
+    world.AddWall(cubeMesh, matWallBrick,
+        glm::scale(glm::translate(Mat4(1.0f), Vec3(roomX - 4.75f, 1.5f, roomZ)), Vec3(0.5f, 3.0f, 9.0f)));
+
+    // Furniture
+    world.AddProp("Table", cubeMesh, matConcrete,
+        glm::translate(Mat4(1.0f), Vec3(roomX - 3.0f, 0.5f, roomZ - 3.0f)));
+    world.AddProp("SmallObject", cubeMesh, matBlueSphere,
+        glm::scale(glm::translate(Mat4(1.0f), Vec3(roomX + 2.0f, 0.25f, roomZ + 2.0f)), Vec3(0.5f)));
+
+    // -------------------------------------------
+    // PILLAR AREA - Obstacles to navigate
+    // -------------------------------------------
+    for (int i = 0; i < 3; i++) {
+        Mat4 pillarTransform = glm::translate(Mat4(1.0f), Vec3(5.0f + i * 2.0f, 1.5f, 15.0f + i * 3.0f));
+        pillarTransform = glm::scale(pillarTransform, Vec3(1.0f, 3.0f, 1.0f));
+        world.AddStructural(cubeMesh, matWallGray, pillarTransform);
+    }
+
+    // -------------------------------------------
+    // Setup lighting for the world
+    // -------------------------------------------
+    world.SetDirectionalLight(Vec3(0.5f, 1.0f, 0.3f), Vec3(1.0f, 0.98f, 0.95f), 1.0f);
+    world.SetAmbientLight(Vec3(0.15f, 0.15f, 0.2f), 1.0f);
+
+    // Rebuild render batches for optimal performance
+    world.RebuildBatches();
+    world.PrintDebugInfo();
+
+    LOG_INFO("Game", "Static world built with " + std::to_string(world.GetObjectCount()) + " objects");
 
     // Setup world collision geometry
     SetupWorldCollision();
@@ -426,74 +528,34 @@ void OnUpdate(double deltaTime) {
 void OnRender(double interpolation) {
     auto& engine = Engine::Instance();
     auto& camera = engine.GetCamera();
-    auto& renderer = Renderer::Instance();
 
     // ========================================================================
-    // NEW: Source Engine-style rendering with Material System
+    // Render Static World - All floors, walls, ceilings, props
     //
-    // Before (old way - manual shader management):
-    //   g_basicShader->Bind();
-    //   g_basicShader->SetMat4("u_View", camera.GetViewMatrix());
-    //   g_basicShader->SetVec3("u_Color", Vec3(0.8f, 0.2f, 0.2f));
-    //   g_originCube->Draw();
-    //
-    // After (new way - clean Mesh → Material → Shader abstraction):
-    //   renderer.BeginFrame(camera);
-    //   renderer.Draw(g_originCube, g_matRedCube, cubeTransform);
-    //   renderer.EndFrame();
-    //
-    // Benefits:
-    // - Zero OpenGL code in game logic
-    // - One shader shared by many materials
-    // - Automatic render state management (blend, cull, depth)
-    // - Automatic batching by shader/material
+    // The StaticWorldRenderer handles:
+    // - Material batching (groups objects by material to minimize GPU state changes)
+    // - Automatic shader binding and uniform upload
+    // - Visibility culling (by type, layer, or individual object)
     // ========================================================================
-
-    // Begin frame - sets up camera matrices and global state
-    renderer.BeginFrame(camera);
-
-    // Setup lighting (once per frame, applies to all materials using this shader)
-    DirectionalLight sunLight;
-    sunLight.direction = Vec3(0.5f, 1.0f, 0.3f);
-    sunLight.color = Vec3(1.0f, 0.98f, 0.95f);
-    sunLight.intensity = 1.0f;
-    renderer.SetDirectionalLight(sunLight);
-
-    AmbientLight ambientLight;
-    ambientLight.color = Vec3(0.15f, 0.15f, 0.2f);
-    ambientLight.intensity = 1.0f;
-    renderer.SetAmbientLight(ambientLight);
+    auto& staticWorld = StaticWorldRenderer::Instance();
+    staticWorld.Render(camera);
 
     // ========================================================================
-    // Draw meshes with materials - clean and simple!
-    // The material knows its shader, the renderer handles all the plumbing.
+    // Render Debug Visualization (Grid, Axes)
     // ========================================================================
+    if (g_debugShader && g_debugShader->IsValid()) {
+        g_debugShader->Bind();
+        g_debugShader->SetMat4("u_View", camera.GetViewMatrix());
+        g_debugShader->SetMat4("u_Proj", camera.GetProjectionMatrix());
 
-    // Draw ground plane
-    Mat4 groundModel = glm::translate(Mat4(1.0f), Vec3(0.0f, -0.02f, 0.0f));
-    renderer.Draw(g_groundPlane, g_matGround, groundModel);
+        g_gridMesh->Draw();
+        g_axesMesh->Draw();
 
-    // Draw origin cube
-    Mat4 cubeModel = glm::translate(Mat4(1.0f), Vec3(0.0f, 0.5f, 0.0f));
-    renderer.Draw(g_originCube, g_matRedCube, cubeModel);
-
-    // Draw sphere on a platform
-    Mat4 sphereModel = glm::translate(Mat4(1.0f), Vec3(-8.0f, 1.5f, 8.0f));
-    renderer.Draw(g_sphere, g_matBlueSphere, sphereModel);
-
-    // Draw cylinder
-    Mat4 cylModel = glm::translate(Mat4(1.0f), Vec3(-12.0f, 3.75f, 12.0f));
-    renderer.Draw(g_cylinder, g_matYellowCylinder, cylModel);
-
-    // Draw debug grid and axes
-    renderer.Draw(g_gridMesh, g_matDebug, Mat4(1.0f));
-    renderer.Draw(g_axesMesh, g_matDebug, Mat4(1.0f));
-
-    // End frame - flushes any queued commands, resets state
-    renderer.EndFrame();
+        g_debugShader->Unbind();
+    }
 
     // ========================================================================
-    // Legacy debug renderer (for remaining debug shapes)
+    // Legacy debug renderer (for collision debug shapes)
     // ========================================================================
     if (g_debugShader && g_debugShader->IsValid()) {
         g_debugShader->Bind();
@@ -503,10 +565,6 @@ void OnRender(double interpolation) {
         g_debugRenderer.BeginFrame();
 
 
-        // ====================================================================
-        // SPAWN AREA - Origin marker (now rendered with mesh abstraction above)
-        // ====================================================================
-        // g_debugRenderer.DrawCube(0.0f, 0.5f, 0.0f, 1.0f, 0.8f, 0.8f, 0.8f);
 
         // ====================================================================
         // STAIR TESTING AREA (Southeast)

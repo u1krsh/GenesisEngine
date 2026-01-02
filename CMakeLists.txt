@@ -62,6 +62,7 @@ set(ENGINE_SOURCES
     src/renderer/material/Material.cpp
     src/renderer/material/MaterialLibrary.cpp
     src/renderer/Renderer.cpp
+    src/renderer/world/StaticWorldRenderer.cpp
 
     # GUI
     src/gui/GUIRenderer.cpp
@@ -104,6 +105,7 @@ set(ENGINE_HEADERS
     src/renderer/Renderer.h
     src/renderer/Material.h
     src/renderer/Mesh.h
+    src/renderer/world/StaticWorldRenderer.h
 
     # GUI
     src/gui/GUITypes.h
