@@ -122,7 +122,7 @@ void Player::DrawDebugInfo(Genesis::DebugRenderer* renderer) const {
     Genesis::Vec3 pos = m_controller.GetPosition();
 
     // Draw player capsule/AABB outline
-    if (config.colliderType == Genesis::ColliderType::Capsule) {
+    if (config.colliderType == Genesis::PlayerColliderType::Capsule) {
         float radius = config.capsuleRadius;
         float height = m_controller.IsCrouching() ? config.capsuleHeight * 0.5f : config.capsuleHeight;
 

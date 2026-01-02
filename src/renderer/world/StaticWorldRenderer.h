@@ -3,6 +3,7 @@
 #include "math/Math.h"
 #include "renderer/mesh/Mesh.h"
 #include "renderer/material/Material.h"
+#include "physics/Collider.h"
 #include <vector>
 #include <memory>
 #include <string>
@@ -21,17 +22,28 @@ enum class StaticObjectType {
     Floor,          // Floor geometry
     Ceiling,        // Ceiling geometry
     Wall,           // Wall geometry
-    Prop,           // Static prop (furniture, decorations)
+    Prop,           // Static prop (furniture, decorations) - may or may not have collision
+    PropPhysics,    // Physics prop - has collision
+    PropDecorative, // Decorative prop - NO collision (like Source's prop_static)
     Structural      // Pillars, beams, etc.
 };
 
 // ============================================================================
 // Static Object - Represents a single static world object
+//
+// DECOUPLED DESIGN (Source Engine style):
+// - mesh/material: Visual representation only
+// - collider: Optional collision shape (can be nullptr for decorative props)
+// - The collision shape can be DIFFERENT from the visual mesh
 // ============================================================================
 struct StaticObject {
+    // Visual (Render)
     MeshPtr mesh = nullptr;
     MaterialPtr material = nullptr;
     Mat4 transform = Mat4(1.0f);
+
+    // Collision (Physics) - DECOUPLED from visual
+    ColliderPtr collider = nullptr;  // nullptr = no collision (decorative)
 
     // Metadata
     std::string name;
@@ -47,8 +59,16 @@ struct StaticObject {
     uint32_t layer = 0;
 
     StaticObject() = default;
+
+    // Constructor with mesh + material (no collision - decorative)
     StaticObject(MeshPtr m, MaterialPtr mat, const Mat4& t = Mat4(1.0f))
-        : mesh(std::move(m)), material(std::move(mat)), transform(t) {
+        : mesh(std::move(m)), material(std::move(mat)), transform(t), collider(nullptr) {
+        UpdateWorldBounds();
+    }
+
+    // Constructor with mesh + material + collider (has collision)
+    StaticObject(MeshPtr m, MaterialPtr mat, ColliderPtr col, const Mat4& t = Mat4(1.0f))
+        : mesh(std::move(m)), material(std::move(mat)), transform(t), collider(std::move(col)) {
         UpdateWorldBounds();
     }
 
@@ -57,6 +77,17 @@ struct StaticObject {
 
     // Check if object is valid for rendering
     bool IsValid() const { return mesh != nullptr && material != nullptr && visible; }
+
+    // Check if object has collision
+    bool HasCollision() const { return collider != nullptr; }
+
+    // Get collision AABB in world space
+    AABB GetCollisionAABB() const {
+        if (collider) {
+            return collider->GetWorldAABB(transform);
+        }
+        return AABB{worldBoundsMin, worldBoundsMax};
+    }
 };
 
 // ============================================================================
@@ -70,20 +101,30 @@ struct RenderBatch {
 // ============================================================================
 // Static World Renderer - Renders all static world geometry
 //
-// Designed for efficiency:
-// - Objects grouped by material (minimize shader/state switches)
-// - Frustum culling support (future)
-// - Layer-based visibility control
-// - Statistics tracking
+// DECOUPLED COLLISION (Source Engine style):
+// - Visual mesh and collision shape are separate
+// - Objects can have collision (walls, floors) or be decorative (props)
+// - Collision shapes can be simpler than visual meshes for performance
 //
 // Usage:
 //   auto& world = StaticWorldRenderer::Instance();
-//   world.AddFloor(floorMesh, floorMaterial, floorTransform);
-//   world.AddWall(wallMesh, wallMaterial, wallTransform);
-//   world.AddProp("Chair", chairMesh, woodMaterial, chairTransform);
+//
+//   // WITH collision (floors, walls, platforms)
+//   world.AddFloor(floorMesh, floorMaterial, floorTransform);  // Auto-generates box collider
+//   world.AddWall(wallMesh, wallMaterial, wallTransform);      // Auto-generates box collider
+//
+//   // WITHOUT collision (decorative props)
+//   world.AddPropDecorative("Vase", vaseMesh, vaseMaterial, vaseTransform);
+//
+//   // WITH custom collider (different from visual)
+//   auto simpleBox = BoxCollider::FromSize(1.0f, 2.0f, 1.0f);
+//   world.AddProp("Chair", chairMesh, chairMaterial, simpleBox, chairTransform);
 //
 //   // In render loop:
 //   world.Render(camera);
+//
+//   // Get all collision shapes for physics:
+//   auto& colliders = world.GetCollisionObjects();
 // ============================================================================
 class StaticWorldRenderer {
 public:
@@ -93,19 +134,34 @@ public:
     }
 
     // ========================================================================
-    // Object Management
+    // Object Management - WITH auto-generated collision
     // ========================================================================
 
     // Add a generic static object
     size_t Add(const StaticObject& obj);
     size_t Add(MeshPtr mesh, MaterialPtr material, const Mat4& transform = Mat4(1.0f));
 
-    // Convenience methods for common object types
+    // Add with explicit collider
+    size_t Add(MeshPtr mesh, MaterialPtr material, ColliderPtr collider, const Mat4& transform = Mat4(1.0f));
+
+    // Convenience methods - these AUTO-GENERATE box colliders from transform scale
     size_t AddFloor(MeshPtr mesh, MaterialPtr material, const Mat4& transform = Mat4(1.0f));
     size_t AddCeiling(MeshPtr mesh, MaterialPtr material, const Mat4& transform = Mat4(1.0f));
     size_t AddWall(MeshPtr mesh, MaterialPtr material, const Mat4& transform = Mat4(1.0f));
-    size_t AddProp(const std::string& name, MeshPtr mesh, MaterialPtr material, const Mat4& transform = Mat4(1.0f));
     size_t AddStructural(MeshPtr mesh, MaterialPtr material, const Mat4& transform = Mat4(1.0f));
+
+    // ========================================================================
+    // Prop Management - Decorative vs Physics props
+    // ========================================================================
+
+    // Prop WITH collision (auto-generates box collider)
+    size_t AddProp(const std::string& name, MeshPtr mesh, MaterialPtr material, const Mat4& transform = Mat4(1.0f));
+
+    // Prop WITH custom collider
+    size_t AddProp(const std::string& name, MeshPtr mesh, MaterialPtr material, ColliderPtr collider, const Mat4& transform = Mat4(1.0f));
+
+    // Prop WITHOUT collision (purely decorative - like Source's prop_static with no collision)
+    size_t AddPropDecorative(const std::string& name, MeshPtr mesh, MaterialPtr material, const Mat4& transform = Mat4(1.0f));
 
     // Bulk operations
     void AddMany(const std::vector<StaticObject>& objects);
@@ -188,6 +244,25 @@ public:
     void ResetStats();
 
     // ========================================================================
+    // Collision Queries - Get collision data for physics
+    // ========================================================================
+
+    // Get number of objects with collision
+    size_t GetCollisionObjectCount() const;
+
+    // Get all objects that have collision (for physics system)
+    std::vector<const StaticObject*> GetCollisionObjects() const;
+
+    // Get all collision AABBs (for legacy WorldCollision integration)
+    std::vector<AABB> GetCollisionAABBs() const;
+
+    // Query: Does any collider contain this point?
+    bool PointInAnyCollider(const Vec3& point) const;
+
+    // Query: Get all colliders overlapping an AABB
+    std::vector<const StaticObject*> QueryAABB(const AABB& aabb) const;
+
+    // ========================================================================
     // Debug
     // ========================================================================
 
@@ -205,6 +280,9 @@ private:
 
     // Batching
     void BuildBatches();
+
+    // Helper: Create a box collider from transform (extracts scale)
+    static ColliderPtr CreateBoxColliderFromTransform(const Mat4& transform);
 
 private:
     // All static objects

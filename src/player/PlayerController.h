@@ -9,42 +9,14 @@ namespace Genesis {
 // ============================================================================
 // Collision Shape Types
 // ============================================================================
-enum class ColliderType {
+// Player Collider Type (legacy - use physics/Collider.h for new code)
+// ============================================================================
+enum class PlayerColliderType {
     Capsule,
-    AABB
+    Box
 };
 
-// ============================================================================
-// AABB (Axis-Aligned Bounding Box) Structure
-// ============================================================================
-struct AABB {
-    Vec3 min;
-    Vec3 max;
-
-    AABB() : min(0.0f), max(0.0f) {}
-    AABB(const Vec3& minPoint, const Vec3& maxPoint) : min(minPoint), max(maxPoint) {}
-
-    // Create AABB from center and half-extents
-    static AABB FromCenterExtents(const Vec3& center, const Vec3& halfExtents) {
-        return AABB(center - halfExtents, center + halfExtents);
-    }
-
-    Vec3 GetCenter() const { return (min + max) * 0.5f; }
-    Vec3 GetExtents() const { return (max - min) * 0.5f; }
-    Vec3 GetSize() const { return max - min; }
-
-    bool Contains(const Vec3& point) const {
-        return point.x >= min.x && point.x <= max.x &&
-               point.y >= min.y && point.y <= max.y &&
-               point.z >= min.z && point.z <= max.z;
-    }
-
-    bool Intersects(const AABB& other) const {
-        return min.x <= other.max.x && max.x >= other.min.x &&
-               min.y <= other.max.y && max.y >= other.min.y &&
-               min.z <= other.max.z && max.z >= other.min.z;
-    }
-};
+// AABB is now defined in math/Math.h
 
 // ============================================================================
 // Capsule Structure (for player collision)
@@ -89,7 +61,7 @@ struct GroundInfo {
 // ============================================================================
 struct PlayerControllerConfig {
     // Collider settings
-    ColliderType colliderType = ColliderType::Capsule;
+    PlayerColliderType colliderType = PlayerColliderType::Capsule;
     float capsuleRadius = 0.3f;
     float capsuleHeight = 1.8f;  // Total height
     Vec3 aabbHalfExtents = Vec3(0.3f, 0.9f, 0.3f);

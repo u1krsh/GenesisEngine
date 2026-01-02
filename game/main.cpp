@@ -352,13 +352,19 @@ bool OnInit() {
     world.AddWall(cubeMesh, matWallBrick,
         MakeBoxTransform(roomX + roomW/2 - 0.25f, 1.5f, roomZ - 2.0f, 0.5f, 3.0f, roomD - 5.0f));  // East (doorway)
 
-    // Room furniture
+    // Room furniture - WITH collision
     world.AddProp("Table", cubeMesh, matFurnitureBrown,
         MakeBoxTransform(roomX - 3.0f, 0.5f, roomZ - 3.0f, 1.0f, 1.0f, 1.0f));
-    world.AddProp("SmallObject", cubeMesh, matFurnitureBrown,
-        MakeBoxTransform(roomX + 2.0f, 0.25f, roomZ + 2.0f, 0.5f, 0.5f, 0.5f));
     world.AddProp("Couch", cubeMesh, matFurnitureBrown,
         MakeBoxTransform(roomX - 2.0f, 0.4f, roomZ + 3.0f, 3.0f, 0.8f, 1.0f));
+
+    // Decorative objects - NO collision (player can walk through)
+    world.AddPropDecorative("SmallVase", cubeMesh, matFurnitureBrown,
+        MakeBoxTransform(roomX + 2.0f, 0.25f, roomZ + 2.0f, 0.3f, 0.5f, 0.3f));
+    world.AddPropDecorative("BookStack", cubeMesh, matObstacleOrange,
+        MakeBoxTransform(roomX - 3.0f, 1.1f, roomZ - 3.0f, 0.4f, 0.2f, 0.3f));
+    world.AddPropDecorative("Lamp", cubeMesh, matObstacleOrange,
+        MakeBoxTransform(roomX - 3.5f, 1.2f, roomZ - 3.5f, 0.2f, 0.4f, 0.2f));
 
     // =========================================================================
     // RAMP TESTING AREA (South) - Gradual slope

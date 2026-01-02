@@ -296,7 +296,7 @@ Vec3 PlayerController::GetRightXZ() const {
 
 AABB PlayerController::GetAABB() const {
     Vec3 halfExtents = m_config.aabbHalfExtents;
-    if (m_config.colliderType == ColliderType::Capsule) {
+    if (m_config.colliderType == PlayerColliderType::Capsule) {
         halfExtents = Vec3(m_config.capsuleRadius, m_currentHeight * 0.5f, m_config.capsuleRadius);
     }
     return AABB::FromCenterExtents(m_position + Vec3(0.0f, m_currentHeight * 0.5f, 0.0f), halfExtents);
@@ -580,7 +580,7 @@ bool PlayerController::CheckCollision(const Vec3& position) const {
     }
 
     // Create AABB at position
-    Vec3 halfExtents = m_config.colliderType == ColliderType::Capsule
+    Vec3 halfExtents = m_config.colliderType == PlayerColliderType::Capsule
         ? Vec3(m_config.capsuleRadius, m_currentHeight * 0.5f, m_config.capsuleRadius)
         : m_config.aabbHalfExtents;
 

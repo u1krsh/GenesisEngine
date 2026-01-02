@@ -55,6 +55,20 @@ StaticWorldRenderer::StaticWorldRenderer() {
 }
 
 // ============================================================================
+// Helper: Create box collider from transform scale
+// ============================================================================
+
+ColliderPtr StaticWorldRenderer::CreateBoxColliderFromTransform(const Mat4& transform) {
+    // Extract scale from transform matrix
+    Vec3 scale(
+        glm::length(Vec3(transform[0])),
+        glm::length(Vec3(transform[1])),
+        glm::length(Vec3(transform[2]))
+    );
+    return std::make_shared<BoxCollider>(scale * 0.5f);
+}
+
+// ============================================================================
 // Object Management
 // ============================================================================
 
@@ -71,6 +85,17 @@ size_t StaticWorldRenderer::Add(MeshPtr mesh, MaterialPtr material, const Mat4& 
     obj.material = std::move(material);
     obj.transform = transform;
     obj.type = StaticObjectType::Generic;
+    obj.collider = nullptr;  // No collision by default for generic add
+    return Add(obj);
+}
+
+size_t StaticWorldRenderer::Add(MeshPtr mesh, MaterialPtr material, ColliderPtr collider, const Mat4& transform) {
+    StaticObject obj;
+    obj.mesh = std::move(mesh);
+    obj.material = std::move(material);
+    obj.transform = transform;
+    obj.collider = std::move(collider);
+    obj.type = StaticObjectType::Generic;
     return Add(obj);
 }
 
@@ -81,6 +106,7 @@ size_t StaticWorldRenderer::AddFloor(MeshPtr mesh, MaterialPtr material, const M
     obj.transform = transform;
     obj.type = StaticObjectType::Floor;
     obj.name = "Floor_" + std::to_string(m_objects.size());
+    obj.collider = CreateBoxColliderFromTransform(transform);  // Auto-generate collider
     return Add(obj);
 }
 
@@ -91,6 +117,7 @@ size_t StaticWorldRenderer::AddCeiling(MeshPtr mesh, MaterialPtr material, const
     obj.transform = transform;
     obj.type = StaticObjectType::Ceiling;
     obj.name = "Ceiling_" + std::to_string(m_objects.size());
+    obj.collider = CreateBoxColliderFromTransform(transform);  // Auto-generate collider
     return Add(obj);
 }
 
@@ -101,6 +128,7 @@ size_t StaticWorldRenderer::AddWall(MeshPtr mesh, MaterialPtr material, const Ma
     obj.transform = transform;
     obj.type = StaticObjectType::Wall;
     obj.name = "Wall_" + std::to_string(m_objects.size());
+    obj.collider = CreateBoxColliderFromTransform(transform);  // Auto-generate collider
     return Add(obj);
 }
 
@@ -111,6 +139,29 @@ size_t StaticWorldRenderer::AddProp(const std::string& name, MeshPtr mesh, Mater
     obj.transform = transform;
     obj.type = StaticObjectType::Prop;
     obj.name = name;
+    obj.collider = CreateBoxColliderFromTransform(transform);  // Auto-generate collider
+    return Add(obj);
+}
+
+size_t StaticWorldRenderer::AddProp(const std::string& name, MeshPtr mesh, MaterialPtr material, ColliderPtr collider, const Mat4& transform) {
+    StaticObject obj;
+    obj.mesh = std::move(mesh);
+    obj.material = std::move(material);
+    obj.transform = transform;
+    obj.type = StaticObjectType::PropPhysics;
+    obj.name = name;
+    obj.collider = std::move(collider);  // Custom collider
+    return Add(obj);
+}
+
+size_t StaticWorldRenderer::AddPropDecorative(const std::string& name, MeshPtr mesh, MaterialPtr material, const Mat4& transform) {
+    StaticObject obj;
+    obj.mesh = std::move(mesh);
+    obj.material = std::move(material);
+    obj.transform = transform;
+    obj.type = StaticObjectType::PropDecorative;
+    obj.name = name;
+    obj.collider = nullptr;  // NO collision - decorative only
     return Add(obj);
 }
 
@@ -121,6 +172,7 @@ size_t StaticWorldRenderer::AddStructural(MeshPtr mesh, MaterialPtr material, co
     obj.transform = transform;
     obj.type = StaticObjectType::Structural;
     obj.name = "Structural_" + std::to_string(m_objects.size());
+    obj.collider = CreateBoxColliderFromTransform(transform);  // Auto-generate collider
     return Add(obj);
 }
 
@@ -461,24 +513,38 @@ void StaticWorldRenderer::PrintDebugInfo() const {
     std::cout << "Render Batches: " << m_batches.size() << std::endl;
 
     // Count by type
-    int floors = 0, ceilings = 0, walls = 0, props = 0, structural = 0, generic = 0;
+    int floors = 0, ceilings = 0, walls = 0, props = 0, propsDecorative = 0, structural = 0, generic = 0;
+    int withCollision = 0, withoutCollision = 0;
+
     for (const auto& obj : m_objects) {
         switch (obj.type) {
             case StaticObjectType::Floor: floors++; break;
             case StaticObjectType::Ceiling: ceilings++; break;
             case StaticObjectType::Wall: walls++; break;
-            case StaticObjectType::Prop: props++; break;
+            case StaticObjectType::Prop:
+            case StaticObjectType::PropPhysics: props++; break;
+            case StaticObjectType::PropDecorative: propsDecorative++; break;
             case StaticObjectType::Structural: structural++; break;
             case StaticObjectType::Generic: generic++; break;
+        }
+
+        if (obj.HasCollision()) {
+            withCollision++;
+        } else {
+            withoutCollision++;
         }
     }
 
     std::cout << "  Floors: " << floors << std::endl;
     std::cout << "  Ceilings: " << ceilings << std::endl;
     std::cout << "  Walls: " << walls << std::endl;
-    std::cout << "  Props: " << props << std::endl;
+    std::cout << "  Props (with collision): " << props << std::endl;
+    std::cout << "  Props (decorative): " << propsDecorative << std::endl;
     std::cout << "  Structural: " << structural << std::endl;
     std::cout << "  Generic: " << generic << std::endl;
+    std::cout << "Collision:" << std::endl;
+    std::cout << "  With Collision: " << withCollision << std::endl;
+    std::cout << "  Without Collision (decorative): " << withoutCollision << std::endl;
 
     std::cout << "Last Frame Stats:" << std::endl;
     std::cout << "  Draw Calls: " << m_drawCalls << std::endl;
@@ -487,6 +553,74 @@ void StaticWorldRenderer::PrintDebugInfo() const {
     std::cout << "  Objects Rendered: " << m_objectsRendered << std::endl;
     std::cout << "  Objects Culled: " << m_objectsCulled << std::endl;
     std::cout << "=================================" << std::endl;
+}
+
+// ============================================================================
+// Collision Queries
+// ============================================================================
+
+size_t StaticWorldRenderer::GetCollisionObjectCount() const {
+    size_t count = 0;
+    for (const auto& obj : m_objects) {
+        if (obj.HasCollision()) {
+            count++;
+        }
+    }
+    return count;
+}
+
+std::vector<const StaticObject*> StaticWorldRenderer::GetCollisionObjects() const {
+    std::vector<const StaticObject*> result;
+    result.reserve(m_objects.size());
+
+    for (const auto& obj : m_objects) {
+        if (obj.HasCollision()) {
+            result.push_back(&obj);
+        }
+    }
+
+    return result;
+}
+
+std::vector<AABB> StaticWorldRenderer::GetCollisionAABBs() const {
+    std::vector<AABB> result;
+    result.reserve(m_objects.size());
+
+    for (const auto& obj : m_objects) {
+        if (obj.HasCollision()) {
+            result.push_back(obj.GetCollisionAABB());
+        }
+    }
+
+    return result;
+}
+
+bool StaticWorldRenderer::PointInAnyCollider(const Vec3& point) const {
+    for (const auto& obj : m_objects) {
+        if (obj.HasCollision() && obj.collider->ContainsPoint(point, obj.transform)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<const StaticObject*> StaticWorldRenderer::QueryAABB(const AABB& aabb) const {
+    std::vector<const StaticObject*> result;
+
+    for (const auto& obj : m_objects) {
+        if (!obj.HasCollision()) continue;
+
+        AABB objAABB = obj.GetCollisionAABB();
+
+        // Check AABB overlap
+        if (aabb.max.x >= objAABB.min.x && aabb.min.x <= objAABB.max.x &&
+            aabb.max.y >= objAABB.min.y && aabb.min.y <= objAABB.max.y &&
+            aabb.max.z >= objAABB.min.z && aabb.min.z <= objAABB.max.z) {
+            result.push_back(&obj);
+        }
+    }
+
+    return result;
 }
 
 } // namespace Genesis
