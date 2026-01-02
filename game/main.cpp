@@ -6,6 +6,8 @@
 #include "core/Logger.h"
 #include "renderer/DebugRenderer.h"
 #include "renderer/shader/Shader.h"
+#include "renderer/Mesh.h"
+#include "renderer/Material.h"  // New material system
 #include "world/WorldCollision.h"
 #include "Player.h"
 
@@ -16,8 +18,26 @@ using namespace Genesis;
 // ============================================================================
 static DebugRenderer g_debugRenderer;
 static std::shared_ptr<Shader> g_debugShader;
+static std::shared_ptr<Shader> g_basicShader;
 static Game::Player g_player;
 static bool g_showCollisionDebug = false;
+
+// Demo meshes using the new mesh abstraction
+static MeshPtr g_originCube;
+static MeshPtr g_sphere;
+static MeshPtr g_groundPlane;
+static MeshPtr g_cylinder;
+static MeshPtr g_gridMesh;
+static MeshPtr g_axesMesh;
+
+// ============================================================================
+// Materials - Source Engine-style: One shader, many materials
+// ============================================================================
+static MaterialPtr g_matGround;
+static MaterialPtr g_matRedCube;
+static MaterialPtr g_matBlueSphere;
+static MaterialPtr g_matYellowCylinder;
+static MaterialPtr g_matDebug;
 
 // ============================================================================
 // Setup World Collision Geometry
@@ -180,11 +200,66 @@ bool OnInit() {
         return false;
     }
 
+    g_basicShader = shaderLib.Load("mesh", "mesh.vert", "mesh.frag");
+    if (!g_basicShader) {
+        LOG_ERROR("Game", "Failed to load mesh shader");
+        return false;
+    }
+
     // Initialize debug renderer
     if (!g_debugRenderer.Initialize()) {
         LOG_ERROR("Game", "Failed to initialize debug renderer");
         return false;
     }
+
+    // ========================================================================
+    // Create meshes using the new mesh abstraction - no more touching VAO/VBO!
+    // ========================================================================
+    LOG_INFO("Game", "Creating meshes with new mesh abstraction...");
+
+    // Create a cube at origin
+    g_originCube = MeshPrimitives::CreateCube(1.0f, "OriginCube");
+
+    // Create a sphere
+    g_sphere = MeshPrimitives::CreateSphere(0.5f, 24, 24, "DemoSphere");
+
+    // Create ground plane
+    g_groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
+
+    // Create a cylinder
+    g_cylinder = MeshPrimitives::CreateCylinder(0.3f, 1.5f, 16, "DemoCylinder");
+
+    // Create debug grid and axes using mesh primitives
+    g_gridMesh = MeshPrimitives::CreateGrid(60.0f, 1.0f, Vec3(0.25f, 0.25f, 0.25f), "Grid");
+    g_axesMesh = MeshPrimitives::CreateAxes(3.0f, "Axes");
+
+    LOG_INFO("Game", "Meshes created successfully!");
+
+    // ========================================================================
+    // Create materials - Source Engine-style: shader defines "type", material defines "instance"
+    // One shader can be used by MANY materials with zero duplicate logic!
+    // ========================================================================
+    LOG_INFO("Game", "Creating materials with Source-style material system...");
+
+    auto& matLib = MaterialLibrary::Instance();
+
+    // Ground material - dark gray
+    g_matGround = matLib.CreateSolidColor("Ground", Vec3(0.12f, 0.12f, 0.15f));
+
+    // Red cube material
+    g_matRedCube = matLib.CreateSolidColor("RedCube", Vec3(0.8f, 0.2f, 0.2f));
+
+    // Blue sphere material
+    g_matBlueSphere = matLib.CreateSolidColor("BlueSphere", Vec3(0.2f, 0.6f, 0.9f));
+
+    // Yellow cylinder material
+    g_matYellowCylinder = matLib.CreateSolidColor("YellowCylinder", Vec3(0.9f, 0.7f, 0.2f));
+
+    // Debug material (unlit, for grid/axes)
+    g_matDebug = matLib.Create("Debug", g_debugShader);
+    g_matDebug->SetCullMode(CullMode::Off);
+
+    LOG_INFO("Game", "Materials created successfully!");
 
     // Setup world collision geometry
     SetupWorldCollision();
@@ -351,7 +426,75 @@ void OnUpdate(double deltaTime) {
 void OnRender(double interpolation) {
     auto& engine = Engine::Instance();
     auto& camera = engine.GetCamera();
+    auto& renderer = Renderer::Instance();
 
+    // ========================================================================
+    // NEW: Source Engine-style rendering with Material System
+    //
+    // Before (old way - manual shader management):
+    //   g_basicShader->Bind();
+    //   g_basicShader->SetMat4("u_View", camera.GetViewMatrix());
+    //   g_basicShader->SetVec3("u_Color", Vec3(0.8f, 0.2f, 0.2f));
+    //   g_originCube->Draw();
+    //
+    // After (new way - clean Mesh → Material → Shader abstraction):
+    //   renderer.BeginFrame(camera);
+    //   renderer.Draw(g_originCube, g_matRedCube, cubeTransform);
+    //   renderer.EndFrame();
+    //
+    // Benefits:
+    // - Zero OpenGL code in game logic
+    // - One shader shared by many materials
+    // - Automatic render state management (blend, cull, depth)
+    // - Automatic batching by shader/material
+    // ========================================================================
+
+    // Begin frame - sets up camera matrices and global state
+    renderer.BeginFrame(camera);
+
+    // Setup lighting (once per frame, applies to all materials using this shader)
+    DirectionalLight sunLight;
+    sunLight.direction = Vec3(0.5f, 1.0f, 0.3f);
+    sunLight.color = Vec3(1.0f, 0.98f, 0.95f);
+    sunLight.intensity = 1.0f;
+    renderer.SetDirectionalLight(sunLight);
+
+    AmbientLight ambientLight;
+    ambientLight.color = Vec3(0.15f, 0.15f, 0.2f);
+    ambientLight.intensity = 1.0f;
+    renderer.SetAmbientLight(ambientLight);
+
+    // ========================================================================
+    // Draw meshes with materials - clean and simple!
+    // The material knows its shader, the renderer handles all the plumbing.
+    // ========================================================================
+
+    // Draw ground plane
+    Mat4 groundModel = glm::translate(Mat4(1.0f), Vec3(0.0f, -0.02f, 0.0f));
+    renderer.Draw(g_groundPlane, g_matGround, groundModel);
+
+    // Draw origin cube
+    Mat4 cubeModel = glm::translate(Mat4(1.0f), Vec3(0.0f, 0.5f, 0.0f));
+    renderer.Draw(g_originCube, g_matRedCube, cubeModel);
+
+    // Draw sphere on a platform
+    Mat4 sphereModel = glm::translate(Mat4(1.0f), Vec3(-8.0f, 1.5f, 8.0f));
+    renderer.Draw(g_sphere, g_matBlueSphere, sphereModel);
+
+    // Draw cylinder
+    Mat4 cylModel = glm::translate(Mat4(1.0f), Vec3(-12.0f, 3.75f, 12.0f));
+    renderer.Draw(g_cylinder, g_matYellowCylinder, cylModel);
+
+    // Draw debug grid and axes
+    renderer.Draw(g_gridMesh, g_matDebug, Mat4(1.0f));
+    renderer.Draw(g_axesMesh, g_matDebug, Mat4(1.0f));
+
+    // End frame - flushes any queued commands, resets state
+    renderer.EndFrame();
+
+    // ========================================================================
+    // Legacy debug renderer (for remaining debug shapes)
+    // ========================================================================
     if (g_debugShader && g_debugShader->IsValid()) {
         g_debugShader->Bind();
         g_debugShader->SetMat4("u_View", camera.GetViewMatrix());
@@ -359,19 +502,11 @@ void OnRender(double interpolation) {
 
         g_debugRenderer.BeginFrame();
 
-        // Draw grid
-        g_debugRenderer.DrawGrid(60.0f, 1.0f, 0.2f, 0.2f, 0.2f);
-
-        // Draw axes at origin
-        g_debugRenderer.DrawAxes(3.0f);
-
-        // Draw floor
-        g_debugRenderer.DrawFloor(60.0f, -0.01f, 0.12f, 0.12f, 0.15f);
 
         // ====================================================================
-        // SPAWN AREA - Origin marker
+        // SPAWN AREA - Origin marker (now rendered with mesh abstraction above)
         // ====================================================================
-        g_debugRenderer.DrawCube(0.0f, 0.5f, 0.0f, 1.0f, 0.8f, 0.8f, 0.8f);
+        // g_debugRenderer.DrawCube(0.0f, 0.5f, 0.0f, 1.0f, 0.8f, 0.8f, 0.8f);
 
         // ====================================================================
         // STAIR TESTING AREA (Southeast)

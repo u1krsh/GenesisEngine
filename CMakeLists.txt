@@ -57,6 +57,11 @@ set(ENGINE_SOURCES
     # Renderer
     src/renderer/shader/Shader.cpp
     src/renderer/DebugRenderer.cpp
+    src/renderer/mesh/Mesh.cpp
+    src/renderer/mesh/MeshPrimitives.cpp
+    src/renderer/material/Material.cpp
+    src/renderer/material/MaterialLibrary.cpp
+    src/renderer/Renderer.cpp
 
     # GUI
     src/gui/GUIRenderer.cpp
@@ -89,6 +94,16 @@ set(ENGINE_HEADERS
     # Renderer
     src/renderer/shader/Shader.h
     src/renderer/DebugRenderer.h
+    src/renderer/mesh/VertexLayout.h
+    src/renderer/mesh/Mesh.h
+    src/renderer/mesh/MeshBuilder.h
+    src/renderer/mesh/MeshPrimitives.h
+    src/renderer/material/MaterialProperty.h
+    src/renderer/material/Material.h
+    src/renderer/material/MaterialLibrary.h
+    src/renderer/Renderer.h
+    src/renderer/Material.h
+    src/renderer/Mesh.h
 
     # GUI
     src/gui/GUITypes.h
