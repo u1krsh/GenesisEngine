@@ -270,24 +270,32 @@ MeshPtr MeshPrimitives::CreateCone(float radius, float height, uint32_t segments
     const float PI = 3.14159265358979323846f;
     float halfHeight = height * 0.5f;
 
-    // Apex
-    uint32_t apex = builder.GetVertexCount();
-    builder.AddVertex(VertexPNT({0, halfHeight, 0}, {0, 1, 0}, {0.5f, 1.0f}));
+    // Calculate the cone slope for normals
+    // The normal points outward from the cone surface
+    float slopeAngle = std::atan2(radius, height);
+    float ny = std::sin(slopeAngle);  // Y component of normal
+    float nxz = std::cos(slopeAngle); // XZ magnitude of normal
 
-    // Base vertices for sides
-    uint32_t baseStart = builder.GetVertexCount();
+    // Side vertices - we need separate vertices for each face for proper normals
+    uint32_t sideStart = builder.GetVertexCount();
     for (uint32_t i = 0; i <= segments; ++i) {
         float theta = 2.0f * PI * i / segments;
-        float x = std::cos(theta);
-        float z = std::sin(theta);
+        float cosTheta = std::cos(theta);
+        float sinTheta = std::sin(theta);
 
-        // Calculate normal for cone side
-        Vec3 tangent = Vec3(-z, 0, x);
-        Vec3 toApex = Vec3(0, halfHeight, 0) - Vec3(x * radius, -halfHeight, z * radius);
-        Vec3 normal = glm::normalize(glm::cross(tangent, toApex));
+        // Normal for this slice of the cone
+        Vec3 normal = glm::normalize(Vec3(cosTheta * nxz, ny, sinTheta * nxz));
 
+        // Apex vertex for this triangle
         builder.AddVertex(VertexPNT(
-            {x * radius, -halfHeight, z * radius},
+            {0, halfHeight, 0},
+            normal,
+            {(static_cast<float>(i) + 0.5f) / segments, 1.0f}
+        ));
+
+        // Base vertex for this triangle
+        builder.AddVertex(VertexPNT(
+            {cosTheta * radius, -halfHeight, sinTheta * radius},
             normal,
             {static_cast<float>(i) / segments, 0}
         ));
@@ -295,7 +303,10 @@ MeshPtr MeshPrimitives::CreateCone(float radius, float height, uint32_t segments
 
     // Side triangles
     for (uint32_t i = 0; i < segments; ++i) {
-        builder.AddTriangle(apex, baseStart + i, baseStart + i + 1);
+        uint32_t apex1 = sideStart + i * 2;
+        uint32_t base1 = sideStart + i * 2 + 1;
+        uint32_t base2 = sideStart + (i + 1) * 2 + 1;
+        builder.AddTriangle(apex1, base1, base2);
     }
 
     // Bottom cap center

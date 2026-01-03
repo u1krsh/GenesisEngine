@@ -25,7 +25,7 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
 
     // Background panel - positioned at TOP LEFT
     float panelWidth = 280;
-    float panelHeight = lineHeight * 20 + padding * 2;  // Expanded for render stats
+    float panelHeight = lineHeight * 21 + padding * 2;  // Expanded for render stats + vertices
     Rect panelRect(10, 10, panelWidth, panelHeight);
 
     // Windows 7 style panel with gradient
@@ -131,13 +131,24 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
     renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
     y += lineHeight;
 
-    // Triangle count
+    // Vertex count
+    oss.str("");
+    uint32_t vertices = worldRenderer.GetVerticesRendered();
+    if (vertices > 1000) {
+        oss << "Vertices: " << std::setprecision(1) << (vertices / 1000.0f) << "K";
+    } else {
+        oss << "Vertices: " << vertices;
+    }
+    renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+    y += lineHeight;
+
+    // Triangle count (polygons)
     oss.str("");
     uint32_t triangles = worldRenderer.GetTrianglesRendered();
     if (triangles > 1000) {
-        oss << "Triangles: " << std::setprecision(1) << (triangles / 1000.0f) << "K";
+        oss << "Polygons: " << std::setprecision(1) << (triangles / 1000.0f) << "K";
     } else {
-        oss << "Triangles: " << triangles;
+        oss << "Polygons: " << triangles;
     }
     renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
     y += lineHeight;

@@ -1,5 +1,6 @@
 #include "DebugRenderer.h"
 #include <iostream>
+#include <cmath>
 
 namespace Genesis {
 
@@ -208,6 +209,89 @@ void DebugRenderer::DrawWireBox(float x, float y, float z, float width, float he
     DrawLine(x + hw, y - hh, z - hd, x + hw, y + hh, z - hd, r, g, b);
     DrawLine(x + hw, y - hh, z + hd, x + hw, y + hh, z + hd, r, g, b);
     DrawLine(x - hw, y - hh, z + hd, x - hw, y + hh, z + hd, r, g, b);
+}
+
+void DebugRenderer::DrawWireSphere(float x, float y, float z, float radius, float r, float g, float b, int segments) {
+    const float PI = 3.14159265358979323846f;
+
+    // Draw 3 circles (XY, XZ, YZ planes)
+    for (int i = 0; i < segments; ++i) {
+        float theta1 = 2.0f * PI * i / segments;
+        float theta2 = 2.0f * PI * (i + 1) / segments;
+
+        float c1 = std::cos(theta1);
+        float s1 = std::sin(theta1);
+        float c2 = std::cos(theta2);
+        float s2 = std::sin(theta2);
+
+        // XZ plane (horizontal circle)
+        DrawLine(x + c1 * radius, y, z + s1 * radius,
+                 x + c2 * radius, y, z + s2 * radius, r, g, b);
+
+        // XY plane (vertical circle facing Z)
+        DrawLine(x + c1 * radius, y + s1 * radius, z,
+                 x + c2 * radius, y + s2 * radius, z, r, g, b);
+
+        // YZ plane (vertical circle facing X)
+        DrawLine(x, y + c1 * radius, z + s1 * radius,
+                 x, y + c2 * radius, z + s2 * radius, r, g, b);
+    }
+}
+
+void DebugRenderer::DrawWireCone(float x, float y, float z, float radius, float height, float r, float g, float b, int segments) {
+    const float PI = 3.14159265358979323846f;
+    float halfHeight = height * 0.5f;
+
+    // Draw base circle
+    for (int i = 0; i < segments; ++i) {
+        float theta1 = 2.0f * PI * i / segments;
+        float theta2 = 2.0f * PI * (i + 1) / segments;
+
+        float x1 = x + std::cos(theta1) * radius;
+        float z1 = z + std::sin(theta1) * radius;
+        float x2 = x + std::cos(theta2) * radius;
+        float z2 = z + std::sin(theta2) * radius;
+
+        // Base circle
+        DrawLine(x1, y - halfHeight, z1, x2, y - halfHeight, z2, r, g, b);
+
+        // Lines from apex to base (every few segments)
+        if (i % 4 == 0) {
+            DrawLine(x, y + halfHeight, z, x1, y - halfHeight, z1, r, g, b);
+        }
+    }
+}
+
+void DebugRenderer::DrawWireCylinder(float x, float y, float z, float radius, float height, float r, float g, float b, int segments) {
+    const float PI = 3.14159265358979323846f;
+    float halfHeight = height * 0.5f;
+
+    // Draw top and bottom circles, plus vertical lines
+    for (int i = 0; i < segments; ++i) {
+        float theta1 = 2.0f * PI * i / segments;
+        float theta2 = 2.0f * PI * (i + 1) / segments;
+
+        float c1 = std::cos(theta1);
+        float s1 = std::sin(theta1);
+        float c2 = std::cos(theta2);
+        float s2 = std::sin(theta2);
+
+        float x1 = x + c1 * radius;
+        float z1 = z + s1 * radius;
+        float x2 = x + c2 * radius;
+        float z2 = z + s2 * radius;
+
+        // Top circle
+        DrawLine(x1, y + halfHeight, z1, x2, y + halfHeight, z2, r, g, b);
+
+        // Bottom circle
+        DrawLine(x1, y - halfHeight, z1, x2, y - halfHeight, z2, r, g, b);
+
+        // Vertical lines (every few segments)
+        if (i % 4 == 0) {
+            DrawLine(x1, y - halfHeight, z1, x1, y + halfHeight, z1, r, g, b);
+        }
+    }
 }
 
 void DebugRenderer::DrawFloor(float size, float y, float r, float g, float b) {

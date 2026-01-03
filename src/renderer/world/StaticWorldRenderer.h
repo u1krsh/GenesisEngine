@@ -238,6 +238,7 @@ public:
     uint32_t GetDrawCalls() const { return m_drawCalls; }
     uint32_t GetMaterialSwitches() const { return m_materialSwitches; }
     uint32_t GetTrianglesRendered() const { return m_trianglesRendered; }
+    uint32_t GetVerticesRendered() const { return m_verticesRendered; }
     uint32_t GetObjectsRendered() const { return m_objectsRendered; }
     uint32_t GetObjectsCulled() const { return m_objectsCulled; }
 
@@ -307,6 +308,7 @@ private:
     uint32_t m_drawCalls = 0;
     uint32_t m_materialSwitches = 0;
     uint32_t m_trianglesRendered = 0;
+    uint32_t m_verticesRendered = 0;
     uint32_t m_objectsRendered = 0;
     uint32_t m_objectsCulled = 0;
 };

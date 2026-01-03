@@ -12,7 +12,11 @@
 #include "gui/Console.h"
 #include "gui/DebugOverlay.h"
 #include "world/WorldCollision.h"
+#include "map/MapRenderer.h"
+#include "map/Brush.h"
 #include "Player.h"
+
+#include <algorithm>  // for std::max
 
 using namespace Genesis;
 
@@ -31,149 +35,15 @@ static MeshPtr g_axesMesh;
 static MaterialPtr g_matDebug;
 
 // ============================================================================
-// Setup World Collision Geometry
+// Setup World Collision Geometry - Now handled by MapRenderer
 // ============================================================================
+// The world collision is now set up automatically when loading a map via MapRenderer.
+// This function is kept as a fallback for when no map is loaded.
 void SetupWorldCollision() {
     auto& world = WorldCollision::Instance();
     world.Clear();
     world.SetFloorHeight(0.0f);
-
-    // ========================================================================
-    // MAIN SPAWN AREA - Open courtyard
-    // ========================================================================
-    // Floor is at y=0 (handled by SetFloorHeight)
-
-    // ========================================================================
-    // STAIR TESTING AREA (Southeast) - Various step heights
-    // ========================================================================
-    // Standard staircase (0.25 unit steps) going up +X direction - AUTO CLIMB
-    for (int i = 0; i < 8; i++) {
-        float x = 8.0f + i * 1.0f;
-        float y = 0.125f + i * 0.25f;  // Each step 0.25 units high
-        world.AddStair(x, y, 8.0f, 1.0f, 0.25f + i * 0.5f, 2.0f);  // Wide stairs (tagged as Stair)
-    }
-
-    // Landing platform at top of stairs
-    world.AddBox(16.5f, 2.0f, 8.0f, 2.0f, 4.0f, 4.0f);
-
-    // Steep staircase (0.4 unit steps) - tests step height limits - AUTO CLIMB
-    for (int i = 0; i < 5; i++) {
-        float x = 8.0f + i * 0.8f;
-        float y = 0.2f + i * 0.4f;
-        world.AddStair(x, y, 12.0f, 0.8f, 0.4f + i * 0.8f, 2.0f);  // Tagged as Stair
-    }
-
-    // ========================================================================
-    // PLATFORMING AREA (Northeast) - Jump testing
-    // ========================================================================
-    // Series of platforms at different heights
-    world.AddCube(-8.0f, 0.5f, 8.0f, 2.0f);      // Ground level platform
-    world.AddCube(-8.0f, 1.5f, 12.0f, 2.0f);     // 1 unit up
-    world.AddCube(-8.0f, 2.5f, 16.0f, 2.0f);     // 2 units up
-    world.AddCube(-12.0f, 2.5f, 16.0f, 2.0f);    // Side platform
-    world.AddCube(-12.0f, 3.5f, 12.0f, 2.0f);    // Higher side
-    world.AddCube(-12.0f, 1.0f, 8.0f, 2.0f);     // Lower side
-
-    // Gap jump test - platforms with gaps
-    world.AddCube(-16.0f, 0.5f, 8.0f, 2.0f);     // Start
-    world.AddCube(-16.0f, 0.5f, 12.0f, 2.0f);    // 2 unit gap
-    world.AddCube(-16.0f, 1.0f, 17.0f, 2.0f);    // 3 unit gap + height
-
-    // ========================================================================
-    // HALLWAY/CORRIDOR AREA (West)
-    // ========================================================================
-    // Long narrow corridor with walls
-    float corridorZ = -8.0f;
-
-    // Left wall
-    world.AddBox(-15.0f, 1.5f, corridorZ, 20.0f, 3.0f, 0.5f);
-    // Right wall
-    world.AddBox(-15.0f, 1.5f, corridorZ + 3.0f, 20.0f, 3.0f, 0.5f);
-    // End wall (creates a room)
-    world.AddBox(-25.5f, 1.5f, corridorZ + 1.5f, 0.5f, 3.0f, 3.5f);
-
-    // Obstacles in corridor
-    world.AddCube(-10.0f, 0.5f, corridorZ + 1.5f, 1.0f);  // Box to jump over
-    world.AddCube(-18.0f, 0.25f, corridorZ + 1.5f, 0.5f); // Small step
-
-    // ========================================================================
-    // ROOM AREA (Southwest) - Enclosed space
-    // ========================================================================
-    float roomX = -20.0f;
-    float roomZ = -20.0f;
-    float roomW = 10.0f;
-    float roomD = 10.0f;
-
-    // Room walls (3 units high, 0.5 units thick)
-    world.AddBox(roomX, 1.5f, roomZ - roomD/2 + 0.25f, roomW, 3.0f, 0.5f);           // North wall
-    world.AddBox(roomX, 1.5f, roomZ + roomD/2 - 0.25f, roomW, 3.0f, 0.5f);           // South wall
-    world.AddBox(roomX - roomW/2 + 0.25f, 1.5f, roomZ, 0.5f, 3.0f, roomD - 1.0f);   // West wall
-    world.AddBox(roomX + roomW/2 - 0.25f, 1.5f, roomZ - 2.0f, 0.5f, 3.0f, roomD - 5.0f); // East wall (with doorway)
-
-    // Furniture in room
-    world.AddCube(roomX - 3.0f, 0.5f, roomZ - 3.0f, 1.0f);  // Table
-    world.AddCube(roomX + 2.0f, 0.25f, roomZ + 2.0f, 0.5f); // Small object
-    world.AddBox(roomX - 2.0f, 0.4f, roomZ + 3.0f, 3.0f, 0.8f, 1.0f); // Couch
-
-    // ========================================================================
-    // RAMP TESTING AREA (South)
-    // ========================================================================
-    // Gradual slope made of thin steps - AUTO CLIMB
-    for (int i = 0; i < 16; i++) {
-        float z = -15.0f - i * 0.5f;
-        float y = 0.0625f + i * 0.125f;
-        world.AddStair(5.0f, y, z, 4.0f, 0.125f + i * 0.25f, 0.5f);  // Tagged as Stair
-    }
-
-    // Platform at top of ramp
-    world.AddBox(5.0f, 2.0f, -24.0f, 4.0f, 4.0f, 2.0f);
-
-    // ========================================================================
-    // VERTICAL CLIMBING AREA (Southeast corner)
-    // ========================================================================
-    // Stack of blocks to climb
-    world.AddCube(15.0f, 0.5f, -10.0f, 2.0f);
-    world.AddCube(15.0f, 1.5f, -10.0f, 1.8f);
-    world.AddCube(15.0f, 2.5f, -10.0f, 1.6f);
-    world.AddCube(15.0f, 3.5f, -10.0f, 1.4f);
-    world.AddCube(15.0f, 4.5f, -10.0f, 1.2f);
-
-    // Adjacent pillar
-    world.AddBox(18.0f, 2.5f, -10.0f, 1.0f, 5.0f, 1.0f);
-
-    // ========================================================================
-    // OBSTACLE COURSE (North)
-    // ========================================================================
-    // Low obstacles to jump over
-    world.AddBox(0.0f, 0.25f, 15.0f, 4.0f, 0.5f, 1.0f);
-    world.AddBox(0.0f, 0.5f, 18.0f, 4.0f, 1.0f, 1.0f);
-    world.AddBox(0.0f, 0.75f, 21.0f, 4.0f, 1.5f, 1.0f);
-
-    // Pillars to navigate around
-    world.AddBox(5.0f, 1.5f, 15.0f, 1.0f, 3.0f, 1.0f);
-    world.AddBox(7.0f, 1.5f, 18.0f, 1.0f, 3.0f, 1.0f);
-    world.AddBox(5.0f, 1.5f, 21.0f, 1.0f, 3.0f, 1.0f);
-
-    // ========================================================================
-    // EDGE/CORNER TEST AREA (center-east)
-    // ========================================================================
-    // Cubes placed to test corner collision
-    world.AddCube(8.0f, 0.5f, 0.0f, 1.0f);
-    world.AddCube(9.0f, 0.5f, 1.0f, 1.0f);
-    world.AddCube(10.0f, 0.5f, 0.0f, 1.0f);
-    world.AddCube(9.0f, 0.5f, -1.0f, 1.0f);
-
-    // L-shaped obstacle
-    world.AddBox(12.0f, 0.5f, 3.0f, 3.0f, 1.0f, 1.0f);
-    world.AddBox(13.5f, 0.5f, 5.0f, 1.0f, 1.0f, 3.0f);
-
-    // ========================================================================
-    // SPAWN AREA REFERENCE MARKERS
-    // ========================================================================
-    // Keep some reference cubes at origin for orientation
-    world.AddCube(0.0f, 0.5f, 0.0f, 1.0f);       // Origin cube
-
-    LOG_INFO("Game", "World collision setup with " + std::to_string(world.GetBoxes().size()) + " boxes");
+    LOG_INFO("Game", "World collision cleared - map will provide geometry");
 }
 
 // ============================================================================
@@ -211,6 +81,8 @@ bool OnInit() {
 
     // ========================================================================
     // Setup Materials - Source Engine-style (one shader, many materials)
+    // The MapLoader will auto-create materials based on brush material names
+    // but we can pre-register some with specific colors if desired.
     // ========================================================================
     LOG_INFO("Game", "Creating materials...");
     auto& matLib = MaterialLibrary::Instance();
@@ -219,240 +91,65 @@ bool OnInit() {
     g_matDebug = matLib.Create("Debug", g_debugShader);
     g_matDebug->SetCullMode(CullMode::Off);
 
-    // World materials - simple colors for different surface types
-    auto matFloor = matLib.CreateSolidColor("Floor", Vec3(0.15f, 0.15f, 0.18f));
-    auto matWallGray = matLib.CreateSolidColor("WallGray", Vec3(0.45f, 0.45f, 0.5f));
-    auto matWallBrick = matLib.CreateSolidColor("WallBrick", Vec3(0.55f, 0.3f, 0.25f));
-    auto matConcrete = matLib.CreateSolidColor("Concrete", Vec3(0.5f, 0.5f, 0.52f));
-    auto matStairs = matLib.CreateSolidColor("Stairs", Vec3(0.55f, 0.4f, 0.25f));
-    auto matSteepStairs = matLib.CreateSolidColor("SteepStairs", Vec3(0.65f, 0.35f, 0.2f));
-    auto matPlatformGreen = matLib.CreateSolidColor("PlatformGreen", Vec3(0.3f, 0.55f, 0.3f));
-    auto matPlatformBlue = matLib.CreateSolidColor("PlatformBlue", Vec3(0.25f, 0.45f, 0.65f));
-    auto matObstacleRed = matLib.CreateSolidColor("ObstacleRed", Vec3(0.75f, 0.25f, 0.25f));
-    auto matObstacleOrange = matLib.CreateSolidColor("ObstacleOrange", Vec3(0.75f, 0.5f, 0.2f));
-    auto matPillarGray = matLib.CreateSolidColor("PillarGray", Vec3(0.5f, 0.5f, 0.55f));
-    auto matRamp = matLib.CreateSolidColor("Ramp", Vec3(0.4f, 0.55f, 0.4f));
-    auto matClimbBlue = matLib.CreateSolidColor("ClimbBlue", Vec3(0.5f, 0.5f, 0.7f));
-    auto matFurnitureBrown = matLib.CreateSolidColor("FurnitureBrown", Vec3(0.45f, 0.3f, 0.2f));
+    // Pre-register common materials with specific colors
+    // These will be used by MapLoader if brushes reference them
+    matLib.CreateSolidColor("floor", Vec3(0.15f, 0.15f, 0.18f));
+    matLib.CreateSolidColor("wall", Vec3(0.45f, 0.45f, 0.5f));
+    matLib.CreateSolidColor("concrete", Vec3(0.5f, 0.5f, 0.52f));
+    matLib.CreateSolidColor("brick", Vec3(0.55f, 0.3f, 0.25f));
+    matLib.CreateSolidColor("metal", Vec3(0.5f, 0.5f, 0.55f));
+    matLib.CreateSolidColor("wood", Vec3(0.45f, 0.3f, 0.2f));
 
     LOG_INFO("Game", "Materials created!");
 
     // ========================================================================
-    // Build Static World - All floors, walls, props matching collision geometry
+    // Load Map from file - World geometry is now data-driven!
     // ========================================================================
-    LOG_INFO("Game", "Building static world geometry...");
-    auto& world = StaticWorldRenderer::Instance();
-    world.Clear();
+    LOG_INFO("Game", "Loading map...");
 
-    // Reusable unit cube mesh (scaled per object)
-    auto cubeMesh = MeshPrimitives::CreateCube(1.0f, "UnitCube");
+    auto& mapRenderer = MapRenderer::Instance();
 
-    // Helper lambda for creating scaled cube transforms
-    auto MakeBoxTransform = [](float x, float y, float z, float sx, float sy, float sz) {
-        Mat4 t = glm::translate(Mat4(1.0f), Vec3(x, y, z));
-        return glm::scale(t, Vec3(sx, sy, sz));
-    };
-
-    // -------------------------------------------
-    // GROUND FLOOR
-    // -------------------------------------------
-    auto groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
-    world.AddFloor(groundPlane, matFloor, glm::translate(Mat4(1.0f), Vec3(0.0f, 0.0f, 0.0f)));
-
-    // -------------------------------------------
-    // SPAWN AREA - Origin reference cube
-    // -------------------------------------------
-    world.AddProp("OriginCube", cubeMesh, matObstacleRed,
-        MakeBoxTransform(0.0f, 0.5f, 0.0f, 1.0f, 1.0f, 1.0f));
-
-    // =========================================================================
-    // STAIR TESTING AREA (Southeast) - Standard staircase
-    // =========================================================================
-    for (int i = 0; i < 8; i++) {
-        float x = 8.0f + i * 1.0f;
-        float h = 0.25f + i * 0.5f;
-        float y = h / 2.0f;
-        world.AddStructural(cubeMesh, matStairs,
-            MakeBoxTransform(x, y, 8.0f, 1.0f, h, 2.0f));
+    // Load the test map (you can switch to .json or .map format)
+    if (!mapRenderer.LoadMap("testmap.json")) {
+        LOG_WARNING("Game", "Failed to load testmap.json, trying testmap.map...");
+        if (!mapRenderer.LoadMap("testmap.map")) {
+            LOG_ERROR("Game", "Failed to load any map file!");
+            // Fall back to a simple floor
+            auto& staticWorld = StaticWorldRenderer::Instance();
+            staticWorld.Clear();
+            auto groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
+            auto matFloor = MaterialLibrary::Instance().CreateSolidColor("Floor", Vec3(0.15f, 0.15f, 0.18f));
+            staticWorld.AddFloor(groundPlane, matFloor, glm::translate(Mat4(1.0f), Vec3(0.0f, 0.0f, 0.0f)));
+            staticWorld.SetDirectionalLight(Vec3(0.5f, 1.0f, 0.3f), Vec3(1.0f, 0.98f, 0.95f), 1.0f);
+            staticWorld.SetAmbientLight(Vec3(0.15f, 0.15f, 0.2f), 1.0f);
+            staticWorld.RebuildBatches();
+            SetupWorldCollision();
+        }
     }
 
-    // Landing platform at top of stairs
-    world.AddStructural(cubeMesh, matConcrete,
-        MakeBoxTransform(16.5f, 2.0f, 8.0f, 2.0f, 4.0f, 4.0f));
+    LOG_INFO("Game", "Map loaded with " + std::to_string(mapRenderer.GetBrushCount()) + " brushes");
 
-    // Steep staircase
-    for (int i = 0; i < 5; i++) {
-        float x = 8.0f + i * 0.8f;
-        float h = 0.4f + i * 0.8f;
-        float y = h / 2.0f;
-        world.AddStructural(cubeMesh, matSteepStairs,
-            MakeBoxTransform(x, y, 12.0f, 0.8f, h, 2.0f));
+    // Setup lighting from map metadata (or use defaults)
+    auto& staticWorld = StaticWorldRenderer::Instance();
+    if (mapRenderer.HasMap()) {
+        auto& meta = mapRenderer.GetActiveMap()->GetMetadata();
+        staticWorld.SetDirectionalLight(meta.sunDirection, meta.sunColor, meta.sunIntensity);
+        staticWorld.SetAmbientLight(meta.ambientColor, 1.0f);
     }
-
-    // =========================================================================
-    // PLATFORMING AREA (Northeast) - Jump testing platforms
-    // =========================================================================
-    world.AddProp("JumpPlatform1", cubeMesh, matPlatformGreen,
-        MakeBoxTransform(-8.0f, 0.5f, 8.0f, 2.0f, 1.0f, 2.0f));
-    world.AddProp("JumpPlatform2", cubeMesh, matPlatformGreen,
-        MakeBoxTransform(-8.0f, 1.5f, 12.0f, 2.0f, 1.0f, 2.0f));
-    world.AddProp("JumpPlatform3", cubeMesh, matPlatformGreen,
-        MakeBoxTransform(-8.0f, 2.5f, 16.0f, 2.0f, 1.0f, 2.0f));
-    world.AddProp("JumpPlatform4", cubeMesh, matPlatformGreen,
-        MakeBoxTransform(-12.0f, 2.5f, 16.0f, 2.0f, 1.0f, 2.0f));
-    world.AddProp("JumpPlatform5", cubeMesh, matPlatformGreen,
-        MakeBoxTransform(-12.0f, 3.5f, 12.0f, 2.0f, 1.0f, 2.0f));
-    world.AddProp("JumpPlatform6", cubeMesh, matPlatformGreen,
-        MakeBoxTransform(-12.0f, 1.0f, 8.0f, 2.0f, 1.0f, 2.0f));
-
-    // Gap jump test platforms
-    world.AddProp("GapPlatform1", cubeMesh, matPlatformBlue,
-        MakeBoxTransform(-16.0f, 0.5f, 8.0f, 2.0f, 1.0f, 2.0f));
-    world.AddProp("GapPlatform2", cubeMesh, matPlatformBlue,
-        MakeBoxTransform(-16.0f, 0.5f, 12.0f, 2.0f, 1.0f, 2.0f));
-    world.AddProp("GapPlatform3", cubeMesh, matPlatformBlue,
-        MakeBoxTransform(-16.0f, 1.0f, 17.0f, 2.0f, 1.0f, 2.0f));
-
-    // =========================================================================
-    // HALLWAY/CORRIDOR AREA (West)
-    // =========================================================================
-    float corridorZ = -8.0f;
-
-    // Left wall
-    world.AddWall(cubeMesh, matWallGray,
-        MakeBoxTransform(-15.0f, 1.5f, corridorZ, 20.0f, 3.0f, 0.5f));
-    // Right wall
-    world.AddWall(cubeMesh, matWallGray,
-        MakeBoxTransform(-15.0f, 1.5f, corridorZ + 3.0f, 20.0f, 3.0f, 0.5f));
-    // End wall
-    world.AddWall(cubeMesh, matWallBrick,
-        MakeBoxTransform(-25.5f, 1.5f, corridorZ + 1.5f, 0.5f, 3.0f, 3.5f));
-
-    // Corridor obstacles
-    world.AddProp("CorridorBox", cubeMesh, matObstacleRed,
-        MakeBoxTransform(-10.0f, 0.5f, corridorZ + 1.5f, 1.0f, 1.0f, 1.0f));
-    world.AddProp("CorridorStep", cubeMesh, matObstacleRed,
-        MakeBoxTransform(-18.0f, 0.25f, corridorZ + 1.5f, 0.5f, 0.5f, 0.5f));
-
-    // =========================================================================
-    // ROOM AREA (Southwest) - Enclosed space
-    // =========================================================================
-    float roomX = -20.0f;
-    float roomZ = -20.0f;
-    float roomW = 10.0f;
-    float roomD = 10.0f;
-
-    // Room walls
-    world.AddWall(cubeMesh, matWallBrick,
-        MakeBoxTransform(roomX, 1.5f, roomZ - roomD/2 + 0.25f, roomW, 3.0f, 0.5f));  // North
-    world.AddWall(cubeMesh, matWallBrick,
-        MakeBoxTransform(roomX, 1.5f, roomZ + roomD/2 - 0.25f, roomW, 3.0f, 0.5f));  // South
-    world.AddWall(cubeMesh, matWallBrick,
-        MakeBoxTransform(roomX - roomW/2 + 0.25f, 1.5f, roomZ, 0.5f, 3.0f, roomD - 1.0f));  // West
-    world.AddWall(cubeMesh, matWallBrick,
-        MakeBoxTransform(roomX + roomW/2 - 0.25f, 1.5f, roomZ - 2.0f, 0.5f, 3.0f, roomD - 5.0f));  // East (doorway)
-
-    // Room furniture - WITH collision
-    world.AddProp("Table", cubeMesh, matFurnitureBrown,
-        MakeBoxTransform(roomX - 3.0f, 0.5f, roomZ - 3.0f, 1.0f, 1.0f, 1.0f));
-    world.AddProp("Couch", cubeMesh, matFurnitureBrown,
-        MakeBoxTransform(roomX - 2.0f, 0.4f, roomZ + 3.0f, 3.0f, 0.8f, 1.0f));
-
-    // Decorative objects - NO collision (player can walk through)
-    world.AddPropDecorative("SmallVase", cubeMesh, matFurnitureBrown,
-        MakeBoxTransform(roomX + 2.0f, 0.25f, roomZ + 2.0f, 0.3f, 0.5f, 0.3f));
-    world.AddPropDecorative("BookStack", cubeMesh, matObstacleOrange,
-        MakeBoxTransform(roomX - 3.0f, 1.1f, roomZ - 3.0f, 0.4f, 0.2f, 0.3f));
-    world.AddPropDecorative("Lamp", cubeMesh, matObstacleOrange,
-        MakeBoxTransform(roomX - 3.5f, 1.2f, roomZ - 3.5f, 0.2f, 0.4f, 0.2f));
-
-    // =========================================================================
-    // RAMP TESTING AREA (South) - Gradual slope
-    // =========================================================================
-    for (int i = 0; i < 16; i++) {
-        float z = -15.0f - i * 0.5f;
-        float h = 0.125f + i * 0.25f;
-        float y = h / 2.0f;
-        world.AddStructural(cubeMesh, matRamp,
-            MakeBoxTransform(5.0f, y, z, 4.0f, h, 0.5f));
-    }
-
-    // Platform at top of ramp
-    world.AddStructural(cubeMesh, matConcrete,
-        MakeBoxTransform(5.0f, 2.0f, -24.0f, 4.0f, 4.0f, 2.0f));
-
-    // =========================================================================
-    // VERTICAL CLIMBING AREA (Southeast corner) - Stack of blocks
-    // =========================================================================
-    world.AddProp("ClimbBlock1", cubeMesh, matClimbBlue,
-        MakeBoxTransform(15.0f, 0.5f, -10.0f, 2.0f, 1.0f, 2.0f));
-    world.AddProp("ClimbBlock2", cubeMesh, matClimbBlue,
-        MakeBoxTransform(15.0f, 1.5f, -10.0f, 1.8f, 1.0f, 1.8f));
-    world.AddProp("ClimbBlock3", cubeMesh, matClimbBlue,
-        MakeBoxTransform(15.0f, 2.5f, -10.0f, 1.6f, 1.0f, 1.6f));
-    world.AddProp("ClimbBlock4", cubeMesh, matClimbBlue,
-        MakeBoxTransform(15.0f, 3.5f, -10.0f, 1.4f, 1.0f, 1.4f));
-    world.AddProp("ClimbBlock5", cubeMesh, matClimbBlue,
-        MakeBoxTransform(15.0f, 4.5f, -10.0f, 1.2f, 1.0f, 1.2f));
-
-    // Adjacent pillar
-    world.AddStructural(cubeMesh, matPillarGray,
-        MakeBoxTransform(18.0f, 2.5f, -10.0f, 1.0f, 5.0f, 1.0f));
-
-    // =========================================================================
-    // OBSTACLE COURSE (North) - Low obstacles to jump over
-    // =========================================================================
-    world.AddProp("Obstacle1", cubeMesh, matObstacleOrange,
-        MakeBoxTransform(0.0f, 0.25f, 15.0f, 4.0f, 0.5f, 1.0f));
-    world.AddProp("Obstacle2", cubeMesh, matObstacleOrange,
-        MakeBoxTransform(0.0f, 0.5f, 18.0f, 4.0f, 1.0f, 1.0f));
-    world.AddProp("Obstacle3", cubeMesh, matObstacleOrange,
-        MakeBoxTransform(0.0f, 0.75f, 21.0f, 4.0f, 1.5f, 1.0f));
-
-    // Pillars to navigate around
-    world.AddStructural(cubeMesh, matPillarGray,
-        MakeBoxTransform(5.0f, 1.5f, 15.0f, 1.0f, 3.0f, 1.0f));
-    world.AddStructural(cubeMesh, matPillarGray,
-        MakeBoxTransform(7.0f, 1.5f, 18.0f, 1.0f, 3.0f, 1.0f));
-    world.AddStructural(cubeMesh, matPillarGray,
-        MakeBoxTransform(5.0f, 1.5f, 21.0f, 1.0f, 3.0f, 1.0f));
-
-    // =========================================================================
-    // EDGE/CORNER TEST AREA (Center-East) - Corner collision testing
-    // =========================================================================
-    world.AddProp("CornerTest1", cubeMesh, matObstacleRed,
-        MakeBoxTransform(8.0f, 0.5f, 0.0f, 1.0f, 1.0f, 1.0f));
-    world.AddProp("CornerTest2", cubeMesh, matObstacleRed,
-        MakeBoxTransform(9.0f, 0.5f, 1.0f, 1.0f, 1.0f, 1.0f));
-    world.AddProp("CornerTest3", cubeMesh, matObstacleRed,
-        MakeBoxTransform(10.0f, 0.5f, 0.0f, 1.0f, 1.0f, 1.0f));
-    world.AddProp("CornerTest4", cubeMesh, matObstacleRed,
-        MakeBoxTransform(9.0f, 0.5f, -1.0f, 1.0f, 1.0f, 1.0f));
-
-    // L-shaped obstacle
-    world.AddProp("LShape1", cubeMesh, matPlatformGreen,
-        MakeBoxTransform(12.0f, 0.5f, 3.0f, 3.0f, 1.0f, 1.0f));
-    world.AddProp("LShape2", cubeMesh, matPlatformGreen,
-        MakeBoxTransform(13.5f, 0.5f, 5.0f, 1.0f, 1.0f, 3.0f));
-
-    // -------------------------------------------
-    // Setup lighting
-    // -------------------------------------------
-    world.SetDirectionalLight(Vec3(0.5f, 1.0f, 0.3f), Vec3(1.0f, 0.98f, 0.95f), 1.0f);
-    world.SetAmbientLight(Vec3(0.15f, 0.15f, 0.2f), 1.0f);
-
-    // Rebuild render batches
-    world.RebuildBatches();
-    world.PrintDebugInfo();
-
-    LOG_INFO("Game", "Static world built with " + std::to_string(world.GetObjectCount()) + " objects");
-
-    // Setup world collision geometry
-    SetupWorldCollision();
 
     // Configure and initialize player
     Game::PlayerConfig playerConfig;
-    playerConfig.spawnPosition = Vec3(0.0f, 0.0f, 5.0f);
+
+    // Get spawn position from map, or use default
+    if (mapRenderer.HasMap()) {
+        playerConfig.spawnPosition = mapRenderer.GetSpawnPosition();
+        LOG_INFO("Game", "Player spawn from map: " +
+            std::to_string(playerConfig.spawnPosition.x) + ", " +
+            std::to_string(playerConfig.spawnPosition.y) + ", " +
+            std::to_string(playerConfig.spawnPosition.z));
+    } else {
+        playerConfig.spawnPosition = Vec3(0.0f, 1.0f, 5.0f);
+    }
     playerConfig.mouseSensitivity = 0.1f;
 
     // Controller settings - Source-style movement
@@ -525,7 +222,7 @@ void DrawCollisionDebug() {
     auto& world = WorldCollision::Instance();
     const auto& boxes = world.GetBoxes();
 
-    // Draw each collision box as a wire cube
+    // Draw each collision box as a wire cube (yellow for normal, cyan for stairs)
     for (const auto& box : boxes) {
         AABB aabb = box.GetAABB();
         Vec3 center = (aabb.min + aabb.max) * 0.5f;
@@ -540,6 +237,51 @@ void DrawCollisionDebug() {
             g_debugRenderer.DrawWireBox(center.x, center.y, center.z,
                                          size.x, size.y, size.z,
                                          1.0f, 1.0f, 0.0f);  // Yellow for normal
+        }
+    }
+
+    // Draw brush mesh wireframes (magenta/pink for visual geometry)
+    auto& mapRenderer = MapRenderer::Instance();
+    if (mapRenderer.HasMap()) {
+        const auto& brushes = mapRenderer.GetActiveMap()->GetBrushes();
+        for (const auto& brush : brushes) {
+            Vec3 pos = brush.position;
+            Vec3 size = brush.size;
+
+            // Different colors for different shapes
+            float r = 1.0f, g = 0.4f, b = 1.0f;  // Magenta for mesh wireframe
+
+            switch (brush.shape) {
+                case BrushShape::Cube:
+                    g_debugRenderer.DrawWireBox(pos.x, pos.y, pos.z,
+                                                 size.x, size.y, size.z,
+                                                 r, g, b);
+                    break;
+
+                case BrushShape::Sphere: {
+                    float radius = std::max({size.x, size.y, size.z}) * 0.5f;
+                    g_debugRenderer.DrawWireSphere(pos.x, pos.y, pos.z, radius, r, g, b);
+                    break;
+                }
+
+                case BrushShape::Cone:
+                    g_debugRenderer.DrawWireCone(pos.x, pos.y, pos.z,
+                                                  size.x * 0.5f, size.y,
+                                                  r, g, b);
+                    break;
+
+                case BrushShape::Cylinder:
+                    g_debugRenderer.DrawWireCylinder(pos.x, pos.y, pos.z,
+                                                      size.x * 0.5f, size.y,
+                                                      r, g, b);
+                    break;
+
+                default:
+                    g_debugRenderer.DrawWireBox(pos.x, pos.y, pos.z,
+                                                 size.x, size.y, size.z,
+                                                 r, g, b);
+                    break;
+            }
         }
     }
 

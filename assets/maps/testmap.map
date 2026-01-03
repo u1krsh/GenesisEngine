@@ -1,0 +1,54 @@
+# Genesis Engine Map File
+# Format: shape posX posY posZ sizeX sizeY sizeZ material [flags]
+#
+# Shapes: cube, sphere, cylinder, cone, wedge
+# Flags: stair, nocollision, trigger, norender, detail
+#
+
+@name "Simple Test Map"
+@author "Genesis Engine"
+@spawn 0 1.5 0
+
+# Main floor
+cube 0 -0.5 0 30 1 30 floor
+
+# Walls
+cube 0 1.5 -15 30 3 1 wall
+cube 0 1.5 15 30 3 1 wall
+cube 15 1.5 0 1 3 30 wall
+cube -15 1.5 0 1 3 30 wall
+
+# Center platform
+cube 0 0.5 0 3 1 3 concrete
+
+# Staircase (auto-climbable)
+cube 5 0.125 0 1 0.25 2 concrete stair
+cube 6 0.375 0 1 0.25 2 concrete stair
+cube 7 0.625 0 1 0.25 2 concrete stair
+cube 8 0.875 0 1 0.25 2 concrete stair
+
+# Elevated platform
+cube 10 1 0 3 2 4 metal
+
+# Pillars
+cube -8 1.5 -8 1 3 1 brick
+cube -8 1.5 8 1 3 1 brick
+
+# Jump platforms
+cube -5 0.5 5 2 1 2 wood
+cube -5 1.5 8 2 1 2 wood
+
+# Obstacle
+cube 0 0.25 -8 6 0.5 1 metal
+
+# Spheres
+sphere -10 1 5 2 2 2 metal
+sphere -10 2 8 1.5 1.5 1.5 brick
+
+# Cones
+cone 12 1.5 -8 2 3 2 concrete
+cone 12 1 -5 1.5 2 1.5 wood
+
+# Cylinder
+cylinder -12 1.5 -8 1.5 3 1.5 metal
+

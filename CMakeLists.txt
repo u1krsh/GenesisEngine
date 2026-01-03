@@ -68,6 +68,10 @@ set(ENGINE_SOURCES
     src/gui/GUIRenderer.cpp
     src/gui/Console.cpp
     src/gui/DebugOverlay.cpp
+
+    # Map System
+    src/map/MapLoader.cpp
+    src/map/MapRenderer.cpp
 )
 
 set(ENGINE_HEADERS
@@ -120,6 +124,14 @@ set(ENGINE_HEADERS
     src/gui/widgets/Checkbox.h
     src/gui/widgets/Slider.h
     src/gui/widgets/TextField.h
+
+    # Map System
+    src/Map.h
+    src/map/Brush.h
+    src/map/Map.h
+    src/map/MeshLibrary.h
+    src/map/MapLoader.h
+    src/map/MapRenderer.h
 )
 
 add_library(GenesisEngineLib STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
@@ -144,11 +156,11 @@ target_include_directories(GenesisEngine PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE
 target_link_libraries(GenesisEngine PRIVATE GenesisEngineLib)
 
 # ============================================================================
-# Copy assets to build directory (optional, for convenience)
+# Copy assets to build directory (for running from build folder)
 # ============================================================================
 
-# add_custom_command(TARGET GenesisEngine POST_BUILD
-#     COMMAND ${CMAKE_COMMAND} -E copy_directory
-#     ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:GenesisEngine>/assets
-# )
+add_custom_command(TARGET GenesisEngine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:GenesisEngine>/assets
+)
 

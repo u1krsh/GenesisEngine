@@ -394,6 +394,7 @@ void StaticWorldRenderer::RenderObject(const StaticObject& obj, Shader& shader) 
     // Update stats
     m_drawCalls++;
     m_objectsRendered++;
+    m_verticesRendered += obj.mesh->GetVertexCount();
     if (obj.mesh->HasIndices()) {
         m_trianglesRendered += obj.mesh->GetIndexCount() / 3;
     } else {
@@ -499,6 +500,7 @@ void StaticWorldRenderer::ResetStats() {
     m_drawCalls = 0;
     m_materialSwitches = 0;
     m_trianglesRendered = 0;
+    m_verticesRendered = 0;
     m_objectsRendered = 0;
     m_objectsCulled = 0;
 }
