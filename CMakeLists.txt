@@ -77,6 +77,7 @@ set(ENGINE_SOURCES
     src/bsp/BSPTree.cpp
     src/bsp/BSPCompiler.cpp
     src/bsp/BSPRenderer.cpp
+    src/bsp/BSPCollision.cpp
 )
 
 set(ENGINE_HEADERS
@@ -143,6 +144,7 @@ set(ENGINE_HEADERS
     src/bsp/BSPTree.h
     src/bsp/BSPCompiler.h
     src/bsp/BSPRenderer.h
+    src/bsp/BSPCollision.h
 )
 
 add_library(GenesisEngineLib STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})

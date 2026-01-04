@@ -91,9 +91,17 @@ BSPTreePtr BSPCompiler::Compile(const Map& map, const Options& options) {
     // Store the root node index
     m_bsp->SetRootNode(rootNode);
 
+    // Phase 2: Generate collision hulls
+    GenerateCollisionHulls(map);
+
+    // Set the BSP tree pointer in the collision system
+    m_bsp->GetCollision().SetBSPTree(m_bsp.get());
+
     if (m_options.verbose) {
         BSPStats stats = m_bsp->GetStats();
         std::cout << "[BSPCompiler] Compilation complete!" << std::endl;
+        std::cout << "[BSPCompiler] Collision brushes: " << m_bsp->GetCollision().GetBrushCount() << std::endl;
+        std::cout << "[BSPCompiler] Collision planes: " << m_bsp->GetCollision().GetPlaneCount() << std::endl;
         stats.Print();
     }
 
@@ -652,6 +660,152 @@ uint32_t BSPCompiler::GetPlaneIndex(const BSPPlane& plane) {
     uint32_t idx = static_cast<uint32_t>(m_bsp->GetPlanes().size());
     m_bsp->GetPlanes().push_back(plane);
     return idx;
+}
+
+// ============================================================================
+// Collision Hull Generation (Phase 2)
+// ============================================================================
+
+void BSPCompiler::GenerateCollisionHulls(const Map& map) {
+    if (m_options.verbose) {
+        std::cout << "[BSPCompiler] Generating collision hulls..." << std::endl;
+    }
+
+    BSPCollision& collision = m_bsp->GetCollision();
+    collision.Clear();
+
+    uint32_t brushIndex = 0;
+    for (const auto& brush : map.GetBrushes()) {
+        // Skip non-collision brushes
+        if (!brush.HasCollision()) {
+            brushIndex++;
+            continue;
+        }
+
+        GenerateBrushCollisionHull(brush, brushIndex);
+        brushIndex++;
+    }
+
+    if (m_options.verbose) {
+        std::cout << "[BSPCompiler] Generated " << collision.GetBrushCount() 
+                  << " collision brushes with " << collision.GetPlaneCount() << " planes" << std::endl;
+    }
+}
+
+void BSPCompiler::GenerateBrushCollisionHull(const Brush& brush, uint32_t brushId) {
+    // For Phase 2, we only support cube collision hulls
+    // Other shapes can be approximated as their bounding box
+    switch (brush.shape) {
+        case BrushShape::Cube:
+            GenerateCubeCollisionHull(brush, brushId);
+            break;
+        case BrushShape::Sphere:
+        case BrushShape::Cylinder:
+        case BrushShape::Cone:
+        default:
+            // For non-cube shapes, use AABB as collision hull
+            // This is a simplification - future phases could support more shapes
+            GenerateCubeCollisionHull(brush, brushId);
+            break;
+    }
+}
+
+void BSPCompiler::GenerateCubeCollisionHull(const Brush& brush, uint32_t brushId) {
+    BSPCollision& collision = m_bsp->GetCollision();
+    
+    Vec3 pos = brush.position;
+    Vec3 halfSize = brush.size * 0.5f;
+
+    // Apply rotation if needed
+    Mat4 rotMat = Mat4(1.0f);
+    bool hasRotation = (brush.rotation != Vec3(0.0f));
+    if (hasRotation) {
+        rotMat = glm::rotate(rotMat, glm::radians(brush.rotation.x), Vec3(1, 0, 0));
+        rotMat = glm::rotate(rotMat, glm::radians(brush.rotation.y), Vec3(0, 1, 0));
+        rotMat = glm::rotate(rotMat, glm::radians(brush.rotation.z), Vec3(0, 0, 1));
+    }
+
+    auto transformNormal = [&](const Vec3& n) -> Vec3 {
+        if (!hasRotation) return n;
+        Vec4 tn = rotMat * Vec4(n, 0.0f);
+        return glm::normalize(Vec3(tn));
+    };
+
+    // Create collision brush
+    BSPCollisionBrush collBrush;
+    collBrush.brushId = brushId;
+    collBrush.contents = brush.IsTrigger() ? BSPContents::Trigger : BSPContents::Solid;
+    collBrush.firstPlane = static_cast<uint32_t>(collision.GetPlanes().size());
+    collBrush.numPlanes = 6;
+
+    // Calculate rotated corners for bounds
+    Vec3 corners[8] = {
+        Vec3(-halfSize.x, -halfSize.y, -halfSize.z),
+        Vec3( halfSize.x, -halfSize.y, -halfSize.z),
+        Vec3(-halfSize.x,  halfSize.y, -halfSize.z),
+        Vec3( halfSize.x,  halfSize.y, -halfSize.z),
+        Vec3(-halfSize.x, -halfSize.y,  halfSize.z),
+        Vec3( halfSize.x, -halfSize.y,  halfSize.z),
+        Vec3(-halfSize.x,  halfSize.y,  halfSize.z),
+        Vec3( halfSize.x,  halfSize.y,  halfSize.z),
+    };
+
+    // Transform corners to world space and calculate bounds
+    collBrush.boundsMin = Vec3(std::numeric_limits<float>::max());
+    collBrush.boundsMax = Vec3(std::numeric_limits<float>::lowest());
+
+    for (int i = 0; i < 8; i++) {
+        Vec3 worldCorner;
+        if (hasRotation) {
+            Vec4 rc = rotMat * Vec4(corners[i], 1.0f);
+            worldCorner = pos + Vec3(rc);
+        } else {
+            worldCorner = pos + corners[i];
+        }
+        collBrush.boundsMin = glm::min(collBrush.boundsMin, worldCorner);
+        collBrush.boundsMax = glm::max(collBrush.boundsMax, worldCorner);
+    }
+
+    // Generate 6 planes for the cube (normals pointing outward)
+    // Each plane is defined as: normal dot point = distance
+    struct PlaneDef {
+        Vec3 normal;
+        Vec3 point;  // A point on the plane (in local space relative to brush center)
+    };
+
+    PlaneDef planes[6] = {
+        // +X face
+        { Vec3( 1, 0, 0), Vec3( halfSize.x, 0, 0) },
+        // -X face
+        { Vec3(-1, 0, 0), Vec3(-halfSize.x, 0, 0) },
+        // +Y face
+        { Vec3( 0, 1, 0), Vec3(0,  halfSize.y, 0) },
+        // -Y face
+        { Vec3( 0,-1, 0), Vec3(0, -halfSize.y, 0) },
+        // +Z face
+        { Vec3( 0, 0, 1), Vec3(0, 0,  halfSize.z) },
+        // -Z face
+        { Vec3( 0, 0,-1), Vec3(0, 0, -halfSize.z) },
+    };
+
+    for (int i = 0; i < 6; i++) {
+        Vec3 normal = transformNormal(planes[i].normal);
+        Vec3 worldPoint;
+        if (hasRotation) {
+            Vec4 rp = rotMat * Vec4(planes[i].point, 1.0f);
+            worldPoint = pos + Vec3(rp);
+        } else {
+            worldPoint = pos + planes[i].point;
+        }
+
+        BSPCollisionPlane collPlane;
+        collPlane.normal = normal;
+        collPlane.distance = glm::dot(normal, worldPoint);
+
+        collision.GetPlanes().push_back(collPlane);
+    }
+
+    collision.GetBrushes().push_back(collBrush);
 }
 
 } // namespace Genesis

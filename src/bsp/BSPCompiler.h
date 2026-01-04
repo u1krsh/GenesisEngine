@@ -15,8 +15,11 @@ namespace Genesis {
 // - Build a simple balanced BSP tree
 // - No CSG operations (brushes can overlap)
 //
+// Phase 2: Collision hull generation
+// - Generate convex collision hulls for each brush
+// - Store collision planes for capsule tracing
+//
 // Future:
-// - Phase 2: Proper CSG (subtract brushes from world)
 // - Phase 3: Optimal split plane selection
 // - Phase 4: PVS calculation
 // ============================================================================
@@ -86,6 +89,19 @@ private:
 
     // Find or add plane
     uint32_t GetPlaneIndex(const BSPPlane& plane);
+
+    // ========================================================================
+    // Collision Hull Generation (Phase 2)
+    // ========================================================================
+
+    // Generate collision brushes for all map brushes
+    void GenerateCollisionHulls(const Map& map);
+
+    // Generate collision hull for a single brush
+    void GenerateBrushCollisionHull(const Brush& brush, uint32_t brushId);
+
+    // Generate cube collision hull (6 planes)
+    void GenerateCubeCollisionHull(const Brush& brush, uint32_t brushId);
 
 private:
     BSPTreePtr m_bsp;

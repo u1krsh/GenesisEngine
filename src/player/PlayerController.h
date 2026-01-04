@@ -4,6 +4,11 @@
 #include <functional>
 #include <vector>
 
+// Forward declaration for BSP collision result
+namespace Genesis {
+    struct TraceResult;
+}
+
 namespace Genesis {
 
 // ============================================================================
@@ -200,6 +205,27 @@ public:
     bool GetAutoClimbStairs() const { return m_autoClimbStairs; }
 
     // ========================================================================
+    // BSP Collision (Phase 2)
+    // ========================================================================
+
+    // BSP trace callback - performs a capsule trace through BSP world
+    // Returns TraceResult with fraction, hit normal, etc.
+    using BSPTraceCallback = std::function<TraceResult(
+        const Vec3& start, const Vec3& end, float radius, float halfHeight)>;
+    void SetBSPTraceCallback(BSPTraceCallback callback) { m_bspTraceCallback = callback; }
+
+    // BSP slide move callback - performs slide move with collision response
+    // Returns final position after sliding
+    using BSPSlideMoveCallback = std::function<Vec3(
+        const Vec3& start, const Vec3& velocity, float deltaTime, 
+        float radius, float halfHeight, Vec3& outVelocity)>;
+    void SetBSPSlideMoveCallback(BSPSlideMoveCallback callback) { m_bspSlideMoveCallback = callback; }
+
+    // Enable/disable BSP collision (falls back to legacy if disabled)
+    void SetUseBSPCollision(bool enabled) { m_useBSPCollision = enabled; }
+    bool GetUseBSPCollision() const { return m_useBSPCollision; }
+
+    // ========================================================================
     // Configuration
     // ========================================================================
     const PlayerControllerConfig& GetConfig() const { return m_config; }
@@ -263,6 +289,11 @@ private:
     GroundHeightCallback m_groundHeightCallback;
     DepenetrationCallback m_depenetrationCallback;
     StairClimbCallback m_stairClimbCallback;
+
+    // BSP Collision (Phase 2)
+    BSPTraceCallback m_bspTraceCallback;
+    BSPSlideMoveCallback m_bspSlideMoveCallback;
+    bool m_useBSPCollision = false;  // Off by default until explicitly enabled
 };
 
 } // namespace Genesis

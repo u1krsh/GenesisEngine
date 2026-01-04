@@ -24,9 +24,17 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
     float lineHeight = 14;
     float padding = 8;
 
+    // Calculate panel height based on content
+    // Base lines: title(1) + timing(4) + camera header(1) + camera(3) + settings header(1) + settings(2) + render header(1) + render(6) = 19
+    // BSP section adds: header + 5 stats = 6 more lines (only when BSP rendering is active)
+    bool showBSP = BSPRenderer::Instance().IsRenderingActive();
+    int baseLines = 20;
+    int bspLines = showBSP ? 7 : 0;
+    int totalLines = baseLines + bspLines;
+
     // Background panel - positioned at TOP LEFT
     float panelWidth = 280;
-    float panelHeight = lineHeight * 21 + padding * 2;  // Expanded for render stats + vertices
+    float panelHeight = lineHeight * totalLines + padding * 2;
     Rect panelRect(10, 10, panelWidth, panelHeight);
 
     // Windows 7 style panel with gradient
@@ -166,14 +174,13 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
     renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
     y += lineHeight;
 
-    // BSP Stats section (if BSP is loaded)
-    auto& bspRenderer = BSPRenderer::Instance();
-    if (bspRenderer.HasBSP()) {
+    // BSP Stats section (only shown when BSP rendering is active)
+    if (showBSP) {
         y += 4;
         renderer.DrawText("-- BSP Stats --", x, y, Colors::AccentLight, 1.0f);
         y += lineHeight;
 
-        auto stats = bspRenderer.GetStats();
+        auto stats = BSPRenderer::Instance().GetStats();
 
         oss.str("");
         oss << "BSP Nodes: " << stats.numNodes;
@@ -191,7 +198,7 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
         y += lineHeight;
 
         oss.str("");
-        oss << "Rendered Faces: " << bspRenderer.GetRenderedFaces();
+        oss << "Rendered Faces: " << BSPRenderer::Instance().GetRenderedFaces();
         renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
         y += lineHeight;
 

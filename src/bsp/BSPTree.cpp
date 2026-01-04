@@ -48,6 +48,9 @@ void BSPTree::Clear() {
     m_materials.clear();
     m_materialBatches.clear();
 
+    // Clear collision data (Phase 2)
+    m_collision.Clear();
+
     m_lastFrameFaces = 0;
     m_lastFrameLeafs = 0;
     m_lastFrameNodes = 0;
@@ -433,6 +436,22 @@ BSPStats BSPTree::GetStats() const {
     }
 
     return stats;
+}
+
+// ============================================================================
+// Collision (Phase 2)
+// ============================================================================
+
+TraceResult BSPTree::TraceCapsule(const Vec3& start, const Vec3& end,
+                                   float radius, float halfHeight) const {
+    CollisionCapsule capsule(radius, halfHeight);
+    return m_collision.TraceCapsule(start, end, capsule);
+}
+
+Vec3 BSPTree::SlideMove(const Vec3& start, const Vec3& velocity, float deltaTime,
+                         float radius, float halfHeight, Vec3& outVelocity) const {
+    CollisionCapsule capsule(radius, halfHeight);
+    return m_collision.SlideMove(start, velocity, deltaTime, capsule, outVelocity);
 }
 
 } // namespace Genesis

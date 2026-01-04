@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BSPTypes.h"
+#include "BSPCollision.h"
 #include "renderer/mesh/Mesh.h"
 #include "renderer/material/Material.h"
 #include "renderer/material/MaterialLibrary.h"
@@ -70,6 +71,22 @@ public:
 
     // Check if point is in solid
     bool IsPointSolid(const Vec3& position) const;
+
+    // ========================================================================
+    // Collision (Phase 2)
+    // ========================================================================
+
+    // Get collision system
+    BSPCollision& GetCollision() { return m_collision; }
+    const BSPCollision& GetCollision() const { return m_collision; }
+
+    // Trace a capsule through the BSP tree
+    TraceResult TraceCapsule(const Vec3& start, const Vec3& end,
+                             float radius, float halfHeight) const;
+
+    // Perform slide move with collision response
+    Vec3 SlideMove(const Vec3& start, const Vec3& velocity, float deltaTime,
+                   float radius, float halfHeight, Vec3& outVelocity) const;
 
     // Get all faces (for simple rendering)
     const std::vector<uint32_t>& GetLeafFaces() const { return m_leafFaces; }
@@ -141,6 +158,9 @@ private:
     std::vector<BSPBrushRef> m_brushRefs;
     std::vector<BSPMaterial> m_materials;
     int32_t m_rootNode = 0;               // Root node index (or negative for leaf)
+
+    // Collision system (Phase 2)
+    BSPCollision m_collision;
 
     // GPU resources
     uint32_t m_vao = 0;

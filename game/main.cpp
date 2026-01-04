@@ -15,6 +15,7 @@
 #include "map/MapRenderer.h"
 #include "map/Brush.h"
 #include "bsp/BSPRenderer.h"
+#include "bsp/BSPTree.h"
 #include "Player.h"
 
 #include <algorithm>  // for std::max
@@ -224,6 +225,32 @@ bool OnInit() {
         return WorldCollision::Instance().GetStairClimbHeight(x, z, playerY, radius, maxHeight, moveDir);
     });
 
+    // ========================================================================
+    // BSP Collision Setup (Phase 2) - Connect BSP collision to player
+    // ========================================================================
+    if (BSPRenderer::Instance().HasBSP()) {
+        LOG_INFO("Game", "Setting up BSP collision for player...");
+        
+        // Get pointer to BSP tree (it lives as long as BSPRenderer)
+        auto bspTree = BSPRenderer::Instance().GetBSP();
+        
+        // Set BSP trace callback
+        controller.SetBSPTraceCallback([bspTree](const Vec3& start, const Vec3& end, 
+                                                   float radius, float halfHeight) {
+            return bspTree->TraceCapsule(start, end, radius, halfHeight);
+        });
+        
+        // Set BSP slide move callback
+        controller.SetBSPSlideMoveCallback([bspTree](const Vec3& start, const Vec3& velocity, float deltaTime,
+                                                       float radius, float halfHeight, Vec3& outVelocity) {
+            return bspTree->SlideMove(start, velocity, deltaTime, radius, halfHeight, outVelocity);
+        });
+        
+        // Enable BSP collision by default if BSP is compiled
+        controller.SetUseBSPCollision(true);
+        LOG_INFO("Game", "BSP collision ENABLED for player");
+    }
+
     LOG_INFO("Game", "Game initialized successfully");
     LOG_INFO("Game", "Controls: WASD=Move, Mouse=Look, Shift=Sprint, Space=Jump, Ctrl=Crouch");
     LOG_INFO("Game", "          Left Click=Capture Mouse, Right Click=Release, ESC=Quit");
@@ -375,8 +402,10 @@ void OnInput(double deltaTime) {
         g_useBSPRendering = !g_useBSPRendering;
         if (g_useBSPRendering && !BSPRenderer::Instance().HasBSP()) {
             g_useBSPRendering = false;
+            BSPRenderer::Instance().SetRenderingActive(false);
             LOG_WARNING("Debug", "No BSP compiled, cannot enable BSP rendering");
         } else {
+            BSPRenderer::Instance().SetRenderingActive(g_useBSPRendering);
             LOG_INFO("Debug", g_useBSPRendering ? "BSP rendering ON (F4)" : "Standard rendering ON (F4)");
         }
     }

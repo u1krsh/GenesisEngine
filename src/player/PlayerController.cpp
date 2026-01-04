@@ -1,4 +1,5 @@
 #include "PlayerController.h"
+#include "bsp/BSPCollision.h"
 #include <cmath>
 #include <algorithm>
 
@@ -109,109 +110,156 @@ void PlayerController::Update(float deltaTime) {
         }
     }
 
-    // === HORIZONTAL COLLISION (sides of cubes) ===
-    // Use a collision check that ignores the bottom part of the player
-    // This prevents getting stuck on edges of blocks we're standing on
-    if (m_collisionCallback) {
-        // Create AABB that's raised slightly off the ground to avoid false collisions
-        float stepOffset = m_config.stepHeight + 0.15f;  // Increased offset
-        float checkHeight = m_currentHeight - stepOffset;
+    // =========================================================================
+    // COLLISION HANDLING
+    // =========================================================================
+    
+    // === BSP COLLISION (Phase 2) ===
+    // If BSP collision is enabled and we have a slide move callback, use it
+    if (m_useBSPCollision && m_bspSlideMoveCallback) {
+        Vec3 outVelocity = m_velocity;
+        newPosition = m_bspSlideMoveCallback(
+            m_position, m_velocity, deltaTime,
+            m_config.capsuleRadius, m_currentHeight * 0.5f, outVelocity
+        );
+        m_velocity = outVelocity;
+        
+        // Ground check using BSP trace
+        if (m_bspTraceCallback) {
+            Vec3 groundCheckStart = newPosition;
+            Vec3 groundCheckEnd = newPosition - Vec3(0.0f, m_config.groundCheckDistance + 0.1f, 0.0f);
+            auto groundTrace = m_bspTraceCallback(
+                groundCheckStart, groundCheckEnd,
+                m_config.capsuleRadius, m_currentHeight * 0.5f
+            );
+            
+            if (groundTrace.fraction < 1.0f && groundTrace.hitNormal.y > 0.7f) {
+                // We're on ground
+                m_groundInfo.isGrounded = true;
+                m_groundInfo.groundNormal = groundTrace.hitNormal;
+                m_groundInfo.groundPoint = groundTrace.endPos;
+                m_groundInfo.groundDistance = groundTrace.fraction * (m_config.groundCheckDistance + 0.1f);
+                m_isJumping = false;
+                m_airJumpsRemaining = m_config.maxAirJumps;
+                
+                // Snap to ground if very close
+                if (groundTrace.fraction < 0.1f) {
+                    newPosition.y = groundTrace.endPos.y;
+                    if (m_velocity.y < 0.0f) {
+                        m_velocity.y = 0.0f;
+                    }
+                }
+            } else {
+                m_groundInfo.isGrounded = false;
+            }
+        }
+    }
+    // === LEGACY COLLISION ===
+    else {
+        // === HORIZONTAL COLLISION (sides of cubes) ===
+        // Use a collision check that ignores the bottom part of the player
+        // This prevents getting stuck on edges of blocks we're standing on
+        if (m_collisionCallback) {
+            // Create AABB that's raised slightly off the ground to avoid false collisions
+            float stepOffset = m_config.stepHeight + 0.15f;  // Increased offset
+            float checkHeight = m_currentHeight - stepOffset;
 
-        if (checkHeight > 0.1f) {
-            Vec3 checkCenter = Vec3(newPosition.x, m_position.y + stepOffset + checkHeight * 0.5f, newPosition.z);
-            Vec3 checkExtents = Vec3(m_config.capsuleRadius * 0.95f, checkHeight * 0.5f, m_config.capsuleRadius * 0.95f);  // Slightly smaller
-            AABB horizontalBounds = AABB::FromCenterExtents(checkCenter, checkExtents);
+            if (checkHeight > 0.1f) {
+                Vec3 checkCenter = Vec3(newPosition.x, m_position.y + stepOffset + checkHeight * 0.5f, newPosition.z);
+                Vec3 checkExtents = Vec3(m_config.capsuleRadius * 0.95f, checkHeight * 0.5f, m_config.capsuleRadius * 0.95f);  // Slightly smaller
+                AABB horizontalBounds = AABB::FromCenterExtents(checkCenter, checkExtents);
 
-            bool blocked = m_collisionCallback(newPosition, horizontalBounds);
+                bool blocked = m_collisionCallback(newPosition, horizontalBounds);
 
-            if (blocked) {
-                // Use separate-axis collision resolution
-                // This prevents getting stuck on corners/edges
+                if (blocked) {
+                    // Use separate-axis collision resolution
+                    // This prevents getting stuck on corners/edges
 
-                // First, try the full movement but with a very small AABB to detect which direction is blocked
-                const float epsilon = 0.001f;
+                    // First, try the full movement but with a very small AABB to detect which direction is blocked
+                    const float epsilon = 0.001f;
 
-                // Test X movement independently
-                Vec3 xTestCenter = Vec3(newPosition.x, m_position.y + stepOffset + checkHeight * 0.5f, m_position.z);
-                AABB xTestBounds = AABB::FromCenterExtents(xTestCenter, checkExtents);
-                bool xBlocked = m_collisionCallback(Vec3(newPosition.x, m_position.y, m_position.z), xTestBounds);
+                    // Test X movement independently
+                    Vec3 xTestCenter = Vec3(newPosition.x, m_position.y + stepOffset + checkHeight * 0.5f, m_position.z);
+                    AABB xTestBounds = AABB::FromCenterExtents(xTestCenter, checkExtents);
+                    bool xBlocked = m_collisionCallback(Vec3(newPosition.x, m_position.y, m_position.z), xTestBounds);
 
-                // Test Z movement independently
-                Vec3 zTestCenter = Vec3(m_position.x, m_position.y + stepOffset + checkHeight * 0.5f, newPosition.z);
-                AABB zTestBounds = AABB::FromCenterExtents(zTestCenter, checkExtents);
-                bool zBlocked = m_collisionCallback(Vec3(m_position.x, m_position.y, newPosition.z), zTestBounds);
+                    // Test Z movement independently
+                    Vec3 zTestCenter = Vec3(m_position.x, m_position.y + stepOffset + checkHeight * 0.5f, newPosition.z);
+                    AABB zTestBounds = AABB::FromCenterExtents(zTestCenter, checkExtents);
+                    bool zBlocked = m_collisionCallback(Vec3(m_position.x, m_position.y, newPosition.z), zTestBounds);
 
-                // Apply sliding resolution
-                if (xBlocked && zBlocked) {
-                    // Both axes blocked - don't move horizontally
-                    newPosition.x = m_position.x;
-                    newPosition.z = m_position.z;
-                    m_velocity.x = 0.0f;
-                    m_velocity.z = 0.0f;
-                } else if (xBlocked) {
-                    // Only X blocked, slide along Z
-                    newPosition.x = m_position.x;
-                    m_velocity.x = 0.0f;
-                } else if (zBlocked) {
-                    // Only Z blocked, slide along X
-                    newPosition.z = m_position.z;
-                    m_velocity.z = 0.0f;
-                } else {
-                    // Neither axis blocked individually but combined is blocked
-                    // This is a corner case - allow the axis with more movement
-                    float xMove = std::abs(newPosition.x - m_position.x);
-                    float zMove = std::abs(newPosition.z - m_position.z);
-
-                    if (xMove > zMove) {
-                        // Keep X movement, cancel Z
+                    // Apply sliding resolution
+                    if (xBlocked && zBlocked) {
+                        // Both axes blocked - don't move horizontally
+                        newPosition.x = m_position.x;
+                        newPosition.z = m_position.z;
+                        m_velocity.x = 0.0f;
+                        m_velocity.z = 0.0f;
+                    } else if (xBlocked) {
+                        // Only X blocked, slide along Z
+                        newPosition.x = m_position.x;
+                        m_velocity.x = 0.0f;
+                    } else if (zBlocked) {
+                        // Only Z blocked, slide along X
                         newPosition.z = m_position.z;
                         m_velocity.z = 0.0f;
                     } else {
-                        // Keep Z movement, cancel X
-                        newPosition.x = m_position.x;
-                        m_velocity.x = 0.0f;
-                    }
+                        // Neither axis blocked individually but combined is blocked
+                        // This is a corner case - allow the axis with more movement
+                        float xMove = std::abs(newPosition.x - m_position.x);
+                        float zMove = std::abs(newPosition.z - m_position.z);
 
-                    // Verify the chosen direction is actually clear
-                    Vec3 finalCenter = Vec3(newPosition.x, m_position.y + stepOffset + checkHeight * 0.5f, newPosition.z);
-                    AABB finalBounds = AABB::FromCenterExtents(finalCenter, checkExtents);
-                    if (m_collisionCallback(newPosition, finalBounds)) {
-                        // Still blocked, cancel all movement
-                        newPosition.x = m_position.x;
-                        newPosition.z = m_position.z;
-                        m_velocity.x = 0.0f;
-                        m_velocity.z = 0.0f;
+                        if (xMove > zMove) {
+                            // Keep X movement, cancel Z
+                            newPosition.z = m_position.z;
+                            m_velocity.z = 0.0f;
+                        } else {
+                            // Keep Z movement, cancel X
+                            newPosition.x = m_position.x;
+                            m_velocity.x = 0.0f;
+                        }
+
+                        // Verify the chosen direction is actually clear
+                        Vec3 finalCenter = Vec3(newPosition.x, m_position.y + stepOffset + checkHeight * 0.5f, newPosition.z);
+                        AABB finalBounds = AABB::FromCenterExtents(finalCenter, checkExtents);
+                        if (m_collisionCallback(newPosition, finalBounds)) {
+                            // Still blocked, cancel all movement
+                            newPosition.x = m_position.x;
+                            newPosition.z = m_position.z;
+                            m_velocity.x = 0.0f;
+                            m_velocity.z = 0.0f;
+                        }
                     }
                 }
             }
         }
-    }
 
-    // === VERTICAL COLLISION (ground/top of cubes) ===
-    // Get ground height at the new XZ position, using current Y to find valid ground
-    float groundHeight = GetGroundHeight(newPosition.x, newPosition.z, m_position.y);
+        // === VERTICAL COLLISION (ground/top of cubes) ===
+        // Get ground height at the new XZ position, using current Y to find valid ground
+        float groundHeight = GetGroundHeight(newPosition.x, newPosition.z, m_position.y);
 
-    // Ground collision: if we would go below ground, stop at ground level
-    if (newPosition.y <= groundHeight) {
-        newPosition.y = groundHeight;
+        // Ground collision: if we would go below ground, stop at ground level
+        if (newPosition.y <= groundHeight) {
+            newPosition.y = groundHeight;
 
-        // Stop falling
-        if (m_velocity.y < 0.0f) {
-            m_velocity.y = 0.0f;
-        }
+            // Stop falling
+            if (m_velocity.y < 0.0f) {
+                m_velocity.y = 0.0f;
+            }
 
-        // We've landed
-        m_groundInfo.isGrounded = true;
-        m_groundInfo.groundPoint = Vec3(newPosition.x, groundHeight, newPosition.z);
-        m_groundInfo.groundNormal = Vec3(0.0f, 1.0f, 0.0f);
-        m_groundInfo.groundDistance = 0.0f;
-        m_isJumping = false;
-        m_airJumpsRemaining = m_config.maxAirJumps;
-    } else {
-        // We're in the air
-        float distToGround = newPosition.y - groundHeight;
-        if (distToGround > m_config.groundCheckDistance) {
-            m_groundInfo.isGrounded = false;
+            // We've landed
+            m_groundInfo.isGrounded = true;
+            m_groundInfo.groundPoint = Vec3(newPosition.x, groundHeight, newPosition.z);
+            m_groundInfo.groundNormal = Vec3(0.0f, 1.0f, 0.0f);
+            m_groundInfo.groundDistance = 0.0f;
+            m_isJumping = false;
+            m_airJumpsRemaining = m_config.maxAirJumps;
+        } else {
+            // We're in the air
+            float distToGround = newPosition.y - groundHeight;
+            if (distToGround > m_config.groundCheckDistance) {
+                m_groundInfo.isGrounded = false;
+            }
         }
     }
 
@@ -219,7 +267,8 @@ void PlayerController::Update(float deltaTime) {
     m_position = newPosition;
 
     // === DEPENETRATION (safety net for stuck situations) ===
-    if (m_depenetrationCallback) {
+    // Note: This is only used in legacy mode, BSP slide move handles this internally
+    if (!m_useBSPCollision && m_depenetrationCallback) {
         Vec3 pushOut;
         AABB currentBounds = GetAABB();
         if (m_depenetrationCallback(currentBounds, pushOut)) {

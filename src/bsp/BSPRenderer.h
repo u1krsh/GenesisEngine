@@ -78,6 +78,10 @@ public:
     void SetShowLeafs(bool show) { m_showLeafs = show; }
     bool GetShowLeafs() const { return m_showLeafs; }
 
+    // Track if BSP rendering is currently active (for debug overlay)
+    void SetRenderingActive(bool active) { m_renderingActive = active; }
+    bool IsRenderingActive() const { return m_renderingActive; }
+
     // ========================================================================
     // Statistics
     // ========================================================================
@@ -115,6 +119,7 @@ private:
     bool m_showWireframe = false;
     bool m_showNodes = false;
     bool m_showLeafs = false;
+    bool m_renderingActive = false;  // True when BSP is being used for rendering
 };
 
 } // namespace Genesis
