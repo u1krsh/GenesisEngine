@@ -29,8 +29,9 @@ public:
         bool verbose = true;          // Print progress
         bool balanceTree = true;      // Try to balance the tree
         float splitEpsilon = 0.001f;  // Plane classification epsilon
-        uint32_t maxLeafFaces = 32;   // Max faces per leaf before splitting
+        uint32_t maxLeafFaces = 4;    // Max faces per leaf before splitting
         uint32_t maxTreeDepth = 64;   // Maximum tree depth
+        bool buildPVS = true;         // Build PVS after compilation (Phase 3)
     };
 
     BSPCompiler() = default;
@@ -64,15 +65,16 @@ private:
     void GenerateCylinderFaces(const Brush& brush, uint32_t brushIndex, std::vector<CompileFace>& outFaces);
     void GenerateConeFaces(const Brush& brush, uint32_t brushIndex, std::vector<CompileFace>& outFaces);
 
-    // Build BSP tree recursively
+    // Build recursive tree
     int32_t BuildTree(std::vector<CompileFace>& faces, uint32_t depth);
+
+    // Split a face by a plane
+    void SplitFace(const CompileFace& input, const BSPPlane& plane, CompileFace& outFront, CompileFace& outBack);
 
     // Choose best splitting plane
     uint32_t ChooseSplitPlane(const std::vector<CompileFace>& faces);
 
-    // Split face by plane
-    void SplitFace(const CompileFace& face, const BSPPlane& plane,
-                   CompileFace& front, CompileFace& back);
+
 
     // Classify face against plane
     enum class FaceClassification { Front, Back, OnPlane, Spanning };

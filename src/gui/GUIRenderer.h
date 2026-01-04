@@ -33,6 +33,7 @@ public:
     void DrawRectOutline(const Rect& rect, const Vec4& color, float thickness = 1.0f);
     void DrawRectGradientV(const Rect& rect, const Vec4& topColor, const Vec4& bottomColor);
     void DrawRectGradientH(const Rect& rect, const Vec4& leftColor, const Vec4& rightColor);
+    void DrawLine(const Vec2& start, const Vec2& end, const Vec4& color, float thickness = 1.0f);
 
     // Windows 7 style 3D border (raised or sunken)
     void DrawBorder3D(const Rect& rect, bool raised = true);

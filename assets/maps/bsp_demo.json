@@ -1,0 +1,315 @@
+{
+  "name": "BSP Demo Map",
+  "author": "Genesis Engine",
+  "version": "1.0",
+  "description": "Multi-room indoor map demonstrating BSP/PVS visibility culling",
+
+  "spawn_position": [0, 1.5, 0],
+  "spawn_rotation": [0, 0, 0],
+
+  "sun_direction": [0.5, 1.0, 0.3],
+  "sun_color": [1.0, 0.98, 0.95],
+  "sun_intensity": 0.8,
+  "ambient_color": [0.2, 0.2, 0.25],
+
+  "brushes": [
+    {
+      "name": "Floor",
+      "shape": "cube",
+      "position": [0, -0.5, 0],
+      "size": [50, 1, 50],
+      "material": "floor"
+    },
+    {
+      "name": "Ceiling",
+      "shape": "cube",
+      "position": [0, 4.5, 0],
+      "size": [50, 1, 50],
+      "material": "concrete"
+    },
+
+    {
+      "name": "Room1_WallN",
+      "shape": "cube",
+      "position": [0, 2, -8],
+      "size": [12, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room1_WallS",
+      "shape": "cube",
+      "position": [0, 2, 8],
+      "size": [12, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room1_WallE",
+      "shape": "cube",
+      "position": [6, 2, 0],
+      "size": [0.5, 4, 16],
+      "material": "wall"
+    },
+    {
+      "name": "Room1_WallW_Top",
+      "shape": "cube",
+      "position": [-6, 3.5, 0],
+      "size": [0.5, 1, 16],
+      "material": "wall"
+    },
+    {
+      "name": "Room1_WallW_Left",
+      "shape": "cube",
+      "position": [-6, 2, -5],
+      "size": [0.5, 4, 6],
+      "material": "wall"
+    },
+    {
+      "name": "Room1_WallW_Right",
+      "shape": "cube",
+      "position": [-6, 2, 5],
+      "size": [0.5, 4, 6],
+      "material": "wall"
+    },
+
+    {
+      "name": "Hallway_FloorAbove",
+      "shape": "cube",
+      "position": [-9, 3.5, 0],
+      "size": [6, 0.5, 4],
+      "material": "concrete"
+    },
+    {
+      "name": "Hallway_WallN",
+      "shape": "cube",
+      "position": [-9, 2, -2],
+      "size": [6, 4, 0.5],
+      "material": "brick"
+    },
+    {
+      "name": "Hallway_WallS",
+      "shape": "cube",
+      "position": [-9, 2, 2],
+      "size": [6, 4, 0.5],
+      "material": "brick"
+    },
+
+    {
+      "name": "Room2_WallN",
+      "shape": "cube",
+      "position": [-18, 2, -8],
+      "size": [12, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room2_WallS",
+      "shape": "cube",
+      "position": [-18, 2, 8],
+      "size": [12, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room2_WallW",
+      "shape": "cube",
+      "position": [-24, 2, 0],
+      "size": [0.5, 4, 16],
+      "material": "wall"
+    },
+    {
+      "name": "Room2_WallE_Top",
+      "shape": "cube",
+      "position": [-12, 3.5, 0],
+      "size": [0.5, 1, 16],
+      "material": "wall"
+    },
+    {
+      "name": "Room2_WallE_Left",
+      "shape": "cube",
+      "position": [-12, 2, -5],
+      "size": [0.5, 4, 6],
+      "material": "wall"
+    },
+    {
+      "name": "Room2_WallE_Right",
+      "shape": "cube",
+      "position": [-12, 2, 5],
+      "size": [0.5, 4, 6],
+      "material": "wall"
+    },
+
+    {
+      "name": "Room2_Pillar1",
+      "shape": "cube",
+      "position": [-16, 2, -4],
+      "size": [1, 4, 1],
+      "material": "brick"
+    },
+    {
+      "name": "Room2_Pillar2",
+      "shape": "cube",
+      "position": [-16, 2, 4],
+      "size": [1, 4, 1],
+      "material": "brick"
+    },
+    {
+      "name": "Room2_Pillar3",
+      "shape": "cube",
+      "position": [-20, 2, -4],
+      "size": [1, 4, 1],
+      "material": "brick"
+    },
+    {
+      "name": "Room2_Pillar4",
+      "shape": "cube",
+      "position": [-20, 2, 4],
+      "size": [1, 4, 1],
+      "material": "brick"
+    },
+
+    {
+      "name": "Room3_WallN",
+      "shape": "cube",
+      "position": [18, 2, -8],
+      "size": [12, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room3_WallS_Left",
+      "shape": "cube",
+      "position": [15, 2, 8],
+      "size": [5, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room3_WallS_Right",
+      "shape": "cube",
+      "position": [21, 2, 8],
+      "size": [5, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room3_WallE",
+      "shape": "cube",
+      "position": [24, 2, 0],
+      "size": [0.5, 4, 16],
+      "material": "wall"
+    },
+    {
+      "name": "Room3_WallW_Top",
+      "shape": "cube",
+      "position": [12, 3.5, 0],
+      "size": [0.5, 1, 16],
+      "material": "wall"
+    },
+    {
+      "name": "Room3_WallW_Left",
+      "shape": "cube",
+      "position": [12, 2, -5],
+      "size": [0.5, 4, 6],
+      "material": "wall"
+    },
+    {
+      "name": "Room3_WallW_Right",
+      "shape": "cube",
+      "position": [12, 2, 5],
+      "size": [0.5, 4, 6],
+      "material": "wall"
+    },
+
+    {
+      "name": "Hallway2_WallN",
+      "shape": "cube",
+      "position": [9, 2, -2],
+      "size": [6, 4, 0.5],
+      "material": "brick"
+    },
+    {
+      "name": "Hallway2_WallS",
+      "shape": "cube",
+      "position": [9, 2, 2],
+      "size": [6, 4, 0.5],
+      "material": "brick"
+    },
+
+    {
+      "name": "Room3_Platform",
+      "shape": "cube",
+      "position": [20, 0.5, -4],
+      "size": [4, 1, 4],
+      "material": "metal"
+    },
+
+    {
+      "name": "Room4_Floor",
+      "shape": "cube",
+      "position": [18, -0.5, 16],
+      "size": [12, 1, 12],
+      "material": "floor"
+    },
+    {
+      "name": "Room4_WallN_Left",
+      "shape": "cube",
+      "position": [15, 2, 10],
+      "size": [5, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room4_WallN_Right",
+      "shape": "cube",
+      "position": [21, 2, 10],
+      "size": [5, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room4_WallS",
+      "shape": "cube",
+      "position": [18, 2, 22],
+      "size": [12, 4, 0.5],
+      "material": "wall"
+    },
+    {
+      "name": "Room4_WallE",
+      "shape": "cube",
+      "position": [24, 2, 16],
+      "size": [0.5, 4, 12],
+      "material": "wall"
+    },
+    {
+      "name": "Room4_WallW",
+      "shape": "cube",
+      "position": [12, 2, 16],
+      "size": [0.5, 4, 12],
+      "material": "wall"
+    },
+
+    {
+      "name": "Room1_Crate1",
+      "shape": "cube",
+      "position": [3, 0.5, 5],
+      "size": [1, 1, 1],
+      "material": "wood"
+    },
+    {
+      "name": "Room1_Crate2",
+      "shape": "cube",
+      "position": [4, 0.5, 5],
+      "size": [1, 1, 1],
+      "material": "wood"
+    },
+    {
+      "name": "Room1_Crate3",
+      "shape": "cube",
+      "position": [3.5, 1.5, 5],
+      "size": [1, 1, 1],
+      "material": "wood"
+    }
+  ],
+
+  "entities": [
+    {
+      "classname": "info_player_start",
+      "targetname": "spawn1",
+      "position": [0, 1.5, 0],
+      "rotation": [0, 0, 0]
+    }
+  ]
+}

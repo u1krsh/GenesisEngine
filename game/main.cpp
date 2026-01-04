@@ -16,6 +16,7 @@
 #include "map/Brush.h"
 #include "bsp/BSPRenderer.h"
 #include "bsp/BSPTree.h"
+#include "bsp/BSPBuildVisualizer.h"
 #include "Player.h"
 
 #include <algorithm>  // for std::max
@@ -30,6 +31,7 @@ static std::shared_ptr<Shader> g_debugShader;
 static std::shared_ptr<Shader> g_basicShader;
 static Game::Player g_player;
 static bool g_showCollisionDebug = false;
+static bool g_showPVSDebug = false;       // F6 - Show PVS visualization
 static bool g_useBSPRendering = false;  // Toggle between StaticWorld and BSP rendering
 
 // Debug visualization meshes (grid, axes)
@@ -113,9 +115,9 @@ bool OnInit() {
     auto& mapRenderer = MapRenderer::Instance();
 
     // Load the test map (you can switch to .json or .map format)
-    if (!mapRenderer.LoadMap("testmap.json")) {
-        LOG_WARNING("Game", "Failed to load testmap.json, trying testmap.map...");
-        if (!mapRenderer.LoadMap("testmap.map")) {
+    if (!mapRenderer.LoadMap("bsp_demo.json")) {
+        LOG_WARNING("Game", "Failed to load bsp_demo.json, trying testmap.json...");
+        if (!mapRenderer.LoadMap("testmap.json")) {
             LOG_ERROR("Game", "Failed to load any map file!");
             // Fall back to a simple floor
             auto& staticWorld = StaticWorldRenderer::Instance();
@@ -351,6 +353,78 @@ void DrawCollisionDebug() {
 }
 
 // ============================================================================
+// Draw PVS Debug Visualization (Top-Down View)
+// Shows which leafs are visible from camera position
+// ============================================================================
+void DrawPVSDebug() {
+    auto& bspRenderer = BSPRenderer::Instance();
+    if (!bspRenderer.HasBSP() || !bspRenderer.HasPVS()) return;
+    
+    auto bsp = bspRenderer.GetBSP();
+    if (!bsp) return;
+    
+    const auto& leafs = bsp->GetLeafs();
+    const auto& pvs = bsp->GetPVS();
+    
+    // Find which leaf the camera is in
+    Vec3 camPos = g_player.GetController().GetPosition();
+    int32_t cameraLeaf = bsp->FindLeaf(camPos);
+    
+    // Get visible leafs from PVS
+    std::vector<bool> isVisible(leafs.size(), false);
+    if (cameraLeaf >= 0 && pvs.IsBuilt()) {
+        const auto& visibleLeafs = pvs.GetVisibleLeafs(static_cast<uint32_t>(cameraLeaf));
+        for (uint32_t leafIdx : visibleLeafs) {
+            if (leafIdx < isVisible.size()) {
+                isVisible[leafIdx] = true;
+            }
+        }
+    }
+    
+    // Draw each leaf bounds (projected to XZ plane at Y=0.1 for top-down view)
+    float drawY = 0.1f;  // Slightly above ground to be visible
+    
+    for (size_t i = 0; i < leafs.size(); ++i) {
+        const auto& leaf = leafs[i];
+        
+        // Skip leafs with no geometry
+        if (leaf.numFaces == 0) continue;
+        
+        // Calculate center and size
+        Vec3 center = (leaf.boundsMin + leaf.boundsMax) * 0.5f;
+        Vec3 size = leaf.boundsMax - leaf.boundsMin;
+        
+        // Color based on visibility
+        float r, g, b;
+        if (static_cast<int32_t>(i) == cameraLeaf) {
+            // Current leaf - bright green
+            r = 0.0f; g = 1.0f; b = 0.0f;
+        } else if (isVisible[i]) {
+            // Visible leaf - cyan/blue
+            r = 0.0f; g = 0.8f; b = 1.0f;
+        } else {
+            // Culled leaf - red
+            r = 1.0f; g = 0.2f; b = 0.2f;
+        }
+        
+        // Draw flat box at ground level (top-down view representation)
+        g_debugRenderer.DrawWireBox(center.x, drawY, center.z,
+                                     size.x, 0.05f, size.z,
+                                     r, g, b);
+        
+        // Also draw the full 3D bounds with lower opacity (thinner lines)
+        g_debugRenderer.DrawWireBox(center.x, center.y, center.z,
+                                     size.x, size.y, size.z,
+                                     r * 0.5f, g * 0.5f, b * 0.5f);
+    }
+    
+    // Draw camera position marker
+    g_debugRenderer.DrawWireBox(camPos.x, drawY, camPos.z,
+                                 0.5f, 0.1f, 0.5f,
+                                 1.0f, 1.0f, 0.0f);  // Yellow marker
+}
+
+// ============================================================================
 // Game Shutdown
 // ============================================================================
 void OnShutdown() {
@@ -409,6 +483,37 @@ void OnInput(double deltaTime) {
             LOG_INFO("Debug", g_useBSPRendering ? "BSP rendering ON (F4)" : "Standard rendering ON (F4)");
         }
     }
+
+    // F5 - Toggle PVS (Potentially Visible Set) when in BSP mode
+    if (input.IsKeyPressed(KeyCode::F5)) {
+        if (BSPRenderer::Instance().HasPVS()) {
+            bool usePVS = !BSPRenderer::Instance().GetUsePVS();
+            BSPRenderer::Instance().SetUsePVS(usePVS);
+            LOG_INFO("Debug", usePVS ? "PVS culling ON (F5)" : "PVS culling OFF (F5)");
+        } else {
+            LOG_WARNING("Debug", "No PVS available");
+        }
+    }
+
+    // F6 - Toggle PVS debug visualization (shows visible/culled leafs)
+    if (input.IsKeyPressed(KeyCode::F6)) {
+        g_showPVSDebug = !g_showPVSDebug;
+        LOG_INFO("Debug", g_showPVSDebug ? "PVS visualization ON (F6) - Green=current, Cyan=visible, Red=culled" 
+                                         : "PVS visualization OFF (F6)");
+    }
+
+    // F7 - Play/restart BSP build visualization
+    if (input.IsKeyPressed(KeyCode::F7)) {
+        auto& visualizer = BSPBuildVisualizer::Instance();
+        if (visualizer.GetTotalSteps() > 0) {
+            visualizer.TogglePlayback();
+            LOG_INFO("Debug", std::string("BSP build visualization ") + 
+                             (visualizer.IsPlaying() ? "PLAYING" : "PAUSED") + 
+                             " (" + std::to_string(visualizer.GetTotalSteps()) + " steps)");
+        } else {
+            LOG_WARNING("Debug", "No BSP build steps recorded");
+        }
+    }
 }
 
 // ============================================================================
@@ -417,6 +522,9 @@ void OnInput(double deltaTime) {
 void OnUpdate(double deltaTime) {
     // Update player with deltaTime (movement, physics)
     g_player.Update(deltaTime);
+
+    // Update BSP build visualizer playback
+    BSPBuildVisualizer::Instance().Update(static_cast<float>(deltaTime));
 }
 
 // ============================================================================
@@ -468,6 +576,11 @@ void OnRender(double interpolation) {
         // F1 - Draw collision debug wireframes over real geometry
         if (g_showCollisionDebug) {
             DrawCollisionDebug();
+        }
+
+        // F6 - Draw PVS debug visualization (visible/culled leafs)
+        if (g_showPVSDebug) {
+            DrawPVSDebug();
         }
 
         g_debugRenderer.RenderTriangles();

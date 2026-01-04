@@ -78,6 +78,11 @@ public:
     void SetShowLeafs(bool show) { m_showLeafs = show; }
     bool GetShowLeafs() const { return m_showLeafs; }
 
+    // PVS toggle (Phase 3)
+    void SetUsePVS(bool use) { m_usePVS = use; }
+    bool GetUsePVS() const { return m_usePVS; }
+    bool HasPVS() const;
+
     // Track if BSP rendering is currently active (for debug overlay)
     void SetRenderingActive(bool active) { m_renderingActive = active; }
     bool IsRenderingActive() const { return m_renderingActive; }
@@ -120,6 +125,7 @@ private:
     bool m_showNodes = false;
     bool m_showLeafs = false;
     bool m_renderingActive = false;  // True when BSP is being used for rendering
+    bool m_usePVS = true;            // Enable PVS culling (Phase 3)
 };
 
 } // namespace Genesis

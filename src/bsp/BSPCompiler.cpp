@@ -1,10 +1,16 @@
 #include "BSPCompiler.h"
+#include "BSPBuildVisualizer.h"
 #include "core/Logger.h"
 #include <algorithm>
 #include <cmath>
+#include <cfloat>
+#include "math/Math.h"
 #include <iostream>
 
 namespace Genesis {
+
+using Vec4 = glm::vec4;
+using Mat4 = glm::mat4;
 
 // ============================================================================
 // CompileFace helpers
@@ -74,8 +80,32 @@ BSPTreePtr BSPCompiler::Compile(const Map& map, const Options& options) {
         return nullptr;
     }
 
-    // Step 2: Build BSP tree
-    // For Phase 1, we'll create a simple tree where each leaf contains all faces
+    // Start recording for visualization
+    auto& visualizer = BSPBuildVisualizer::Instance();
+    visualizer.StartRecording();
+
+    // Calculate world bounds for visualization
+    Vec3 worldMin(FLT_MAX), worldMax(-FLT_MAX);
+    for (const auto& face : allFaces) {
+        for (const auto& v : face.vertices) {
+            worldMin = glm::min(worldMin, v.position);
+            worldMax = glm::max(worldMax, v.position);
+        }
+    }
+    visualizer.SetWorldBounds(worldMin, worldMax);
+
+    // Record static geometry (all initial faces)
+    for (const auto& face : allFaces) {
+        if (face.vertices.size() < 2) continue;
+        
+        for (size_t i = 0; i < face.vertices.size(); i++) {
+            size_t next = (i + 1) % face.vertices.size();
+            // Only add wall-like edges (mostly vertical normal) or just all edges?
+            // User wants "the map". All edges is safer.
+            visualizer.AddStaticLine(face.vertices[i].position, face.vertices[next].position);
+        }
+    }
+
     // This is basically a flat list, but sets up the structure for future phases
 
     int32_t rootNode;
@@ -91,11 +121,26 @@ BSPTreePtr BSPCompiler::Compile(const Map& map, const Options& options) {
     // Store the root node index
     m_bsp->SetRootNode(rootNode);
 
+    // Stop recording visualization
+    visualizer.StopRecording();
+
     // Phase 2: Generate collision hulls
     GenerateCollisionHulls(map);
 
     // Set the BSP tree pointer in the collision system
     m_bsp->GetCollision().SetBSPTree(m_bsp.get());
+
+    // Phase 3: Build PVS (Potentially Visible Set)
+    if (m_options.buildPVS) {
+        if (m_options.verbose) {
+            std::cout << "[BSPCompiler] Building PVS..." << std::endl;
+        }
+        m_bsp->GetPVS().Build(*m_bsp);
+        if (m_options.verbose) {
+            std::cout << "[BSPCompiler] PVS built! Avg visibility: " 
+                      << static_cast<int>(m_bsp->GetPVS().GetAverageVisibility() * 100) << "%" << std::endl;
+        }
+    }
 
     if (m_options.verbose) {
         BSPStats stats = m_bsp->GetStats();
@@ -474,6 +519,27 @@ int32_t BSPCompiler::BuildTree(std::vector<CompileFace>& faces, uint32_t depth) 
     BSPPlane splitPlane = faces[splitFaceIdx].plane;
     uint32_t planeIdx = GetPlaneIndex(splitPlane);
 
+    // Record step for visualization
+    if (BSPBuildVisualizer::Instance().IsRecording()) {
+        BSPBuildStep step;
+        step.type = BSPBuildStep::Type::SplitPlane;
+        
+        // Calculate bounds of current region
+        step.boundsMin = Vec3(FLT_MAX);
+        step.boundsMax = Vec3(-FLT_MAX);
+        for (const auto& f : faces) {
+            for (const auto& v : f.vertices) {
+                step.boundsMin = glm::min(step.boundsMin, v.position);
+                step.boundsMax = glm::max(step.boundsMax, v.position);
+            }
+        }
+        
+        step.planeNormal = splitPlane.normal;
+        step.planePoint = splitPlane.normal * splitPlane.distance; // Approximate point on plane
+        
+        BSPBuildVisualizer::Instance().AddStep(step);
+    }
+
     // Partition faces
     std::vector<CompileFace> frontFaces, backFaces;
 
@@ -489,10 +555,12 @@ int32_t BSPCompiler::BuildTree(std::vector<CompileFace>& faces, uint32_t depth) 
                 backFaces.push_back(std::move(face));
                 break;
             case FaceClassification::Spanning:
-                // For Phase 1, just add to both (no splitting)
-                // This is not ideal but works for simple maps
-                frontFaces.push_back(face);
-                backFaces.push_back(std::move(face));
+                {
+                    CompileFace frontFace, backFace;
+                    SplitFace(face, splitPlane, frontFace, backFace);
+                    if (!frontFace.vertices.empty()) frontFaces.push_back(std::move(frontFace));
+                    if (!backFace.vertices.empty()) backFaces.push_back(std::move(backFace));
+                }
                 break;
         }
     }
@@ -513,14 +581,58 @@ int32_t BSPCompiler::BuildTree(std::vector<CompileFace>& faces, uint32_t depth) 
     node.frontChild = BuildTree(frontFaces, depth + 1);
     node.backChild = BuildTree(backFaces, depth + 1);
 
-    // Calculate bounds
-    // TODO: proper bounds calculation
-
     uint32_t nodeIdx = static_cast<uint32_t>(m_bsp->GetNodes().size());
     m_bsp->GetNodes().push_back(node);
 
     return static_cast<int32_t>(nodeIdx);
 }
+
+void BSPCompiler::SplitFace(const CompileFace& input, const BSPPlane& plane, CompileFace& outFront, CompileFace& outBack) {
+    outFront.materialIndex = input.materialIndex;
+    outFront.brushIndex = input.brushIndex;
+    outFront.plane = input.plane;
+    
+    outBack.materialIndex = input.materialIndex;
+    outBack.brushIndex = input.brushIndex;
+    outBack.plane = input.plane;
+    
+    const auto& verts = input.vertices;
+    for (size_t i = 0; i < verts.size(); ++i) {
+        size_t nextIdx = (i + 1) % verts.size();
+        const auto& v1 = verts[i];
+        const auto& v2 = verts[nextIdx];
+        
+        float d1 = glm::dot(plane.normal, v1.position) - plane.distance;
+        float d2 = glm::dot(plane.normal, v2.position) - plane.distance;
+        
+        bool v1Front = d1 > -m_options.splitEpsilon;
+        bool v1Back = d1 < m_options.splitEpsilon;
+        
+        bool v2Front = d2 > -m_options.splitEpsilon;
+        bool v2Back = d2 < m_options.splitEpsilon;
+        
+        if (v1Front) outFront.vertices.push_back(v1);
+        if (v1Back) outBack.vertices.push_back(v1);
+        
+        // Check for crossing
+        // If one is strictly front and other strictly back (or vice versa)
+        if ((d1 > m_options.splitEpsilon && d2 < -m_options.splitEpsilon) || 
+            (d1 < -m_options.splitEpsilon && d2 > m_options.splitEpsilon)) {
+            
+            // Calculate intersection
+            float t = d1 / (d1 - d2);
+            Vec3 p = v1.position + (v2.position - v1.position) * t;
+            Vec3 n = glm::normalize(v1.normal + (v2.normal - v1.normal) * t); // Simple linear interpolate for normal
+            Vec2 uv = v1.texCoord + (v2.texCoord - v1.texCoord) * t;
+            
+            BSPVertex intersectionVert = { p, n, uv };
+            outFront.vertices.push_back(intersectionVert);
+            outBack.vertices.push_back(intersectionVert);
+        }
+    }
+}
+
+
 
 uint32_t BSPCompiler::ChooseSplitPlane(const std::vector<CompileFace>& faces) {
     if (faces.empty()) return UINT32_MAX;
@@ -598,6 +710,16 @@ uint32_t BSPCompiler::CreateLeaf(std::vector<CompileFace>& faces) {
 
     uint32_t leafIdx = static_cast<uint32_t>(m_bsp->GetLeafs().size());
     m_bsp->GetLeafs().push_back(leaf);
+
+    // Record step for visualization
+    if (BSPBuildVisualizer::Instance().IsRecording()) {
+        BSPBuildStep step;
+        step.type = BSPBuildStep::Type::CreateLeaf;
+        step.boundsMin = leaf.boundsMin;
+        step.boundsMax = leaf.boundsMax;
+        step.nodeIndex = leafIdx;
+        BSPBuildVisualizer::Instance().AddStep(step);
+    }
 
     return leafIdx;
 }

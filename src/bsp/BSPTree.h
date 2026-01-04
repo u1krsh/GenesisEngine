@@ -2,6 +2,7 @@
 
 #include "BSPTypes.h"
 #include "BSPCollision.h"
+#include "BSPPVS.h"
 #include "renderer/mesh/Mesh.h"
 #include "renderer/material/Material.h"
 #include "renderer/material/MaterialLibrary.h"
@@ -119,6 +120,20 @@ public:
     void RenderWireframe(const FPSCamera& camera, Shader& shader);
 
     // ========================================================================
+    // PVS (Phase 3) - Potentially Visible Set
+    // ========================================================================
+
+    // Get PVS system
+    BSPPVS& GetPVS() { return m_pvs; }
+    const BSPPVS& GetPVS() const { return m_pvs; }
+
+    // Check if PVS is built
+    bool HasPVS() const { return m_pvs.IsBuilt(); }
+
+    // Render using PVS culling (only visible leafs)
+    void RenderWithPVS(const FPSCamera& camera, Shader& shader);
+
+    // ========================================================================
     // Statistics
     // ========================================================================
 
@@ -161,6 +176,9 @@ private:
 
     // Collision system (Phase 2)
     BSPCollision m_collision;
+
+    // PVS system (Phase 3)
+    BSPPVS m_pvs;
 
     // GPU resources
     uint32_t m_vao = 0;

@@ -51,6 +51,9 @@ void BSPTree::Clear() {
     // Clear collision data (Phase 2)
     m_collision.Clear();
 
+    // Clear PVS data (Phase 3)
+    m_pvs.Clear();
+
     m_lastFrameFaces = 0;
     m_lastFrameLeafs = 0;
     m_lastFrameNodes = 0;
@@ -452,6 +455,40 @@ Vec3 BSPTree::SlideMove(const Vec3& start, const Vec3& velocity, float deltaTime
                          float radius, float halfHeight, Vec3& outVelocity) const {
     CollisionCapsule capsule(radius, halfHeight);
     return m_collision.SlideMove(start, velocity, deltaTime, capsule, outVelocity);
+}
+
+// ============================================================================
+// PVS Rendering (Phase 3)
+// ============================================================================
+
+void BSPTree::RenderWithPVS(const FPSCamera& camera, Shader& shader) {
+    if (!m_gpuReady) {
+        RenderAll(shader);
+        return;
+    }
+
+    m_lastFrameFaces = 0;
+    m_lastFrameLeafs = 0;
+    m_lastFrameNodes = 0;
+
+    Vec3 camPos = camera.GetPosition();
+
+    // Find which leaf the camera is in
+    int32_t cameraLeaf = FindLeaf(camPos);
+    
+    if (cameraLeaf < 0 || !m_pvs.IsBuilt()) {
+        // No valid leaf or no PVS - fall back to regular rendering
+        Render(camera, shader);
+        return;
+    }
+
+    // Get list of visible leafs from PVS
+    const auto& visibleLeafs = m_pvs.GetVisibleLeafs(static_cast<uint32_t>(cameraLeaf));
+
+    // Render only the visible leafs
+    for (uint32_t leafIndex : visibleLeafs) {
+        DrawLeaf(leafIndex, shader);
+    }
 }
 
 } // namespace Genesis

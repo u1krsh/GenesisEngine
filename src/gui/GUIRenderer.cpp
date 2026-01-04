@@ -406,6 +406,34 @@ void GUIRenderer::DrawRectGradientH(const Rect& rect, const Vec4& leftColor, con
     AddVertex(rect.x, rect.y + rect.height, 0, 1, leftColor);
 }
 
+void GUIRenderer::DrawLine(const Vec2& start, const Vec2& end, const Vec4& color, float thickness) {
+    Vec2 dir = end - start;
+    float len = glm::length(dir);
+    if (len < 0.001f) return;
+
+    dir /= len;
+    Vec2 normal(-dir.y, dir.x);
+    Vec2 offset = normal * (thickness * 0.5f);
+
+    Vec2 p0 = start + offset;
+    Vec2 p1 = end + offset;
+    Vec2 p2 = end - offset;
+    Vec2 p3 = start - offset;
+
+    // Use white texture coordinate (1,1) if using font texture, or 0,0 if untextured shader allows it
+    // The shader uses texture if u_UseTexture is 1. We are likely in "flush" batch with texture enabled usually?
+    // Actually the flush disables texture usage (u_UseTexture = 0) for geometric primitives unless flushed.
+    // Wait, DrawText enables texture. Flush clears vertices. So this is safe.
+
+    AddVertex(p0.x, p0.y, 0, 0, color);
+    AddVertex(p1.x, p1.y, 1, 0, color);
+    AddVertex(p2.x, p2.y, 1, 1, color);
+
+    AddVertex(p0.x, p0.y, 0, 0, color);
+    AddVertex(p2.x, p2.y, 1, 1, color);
+    AddVertex(p3.x, p3.y, 0, 1, color);
+}
+
 void GUIRenderer::DrawBorder3D(const Rect& rect, bool raised) {
     Vec4 light = raised ? Colors::BorderLight : Colors::BorderDark;
     Vec4 dark = raised ? Colors::BorderDark : Colors::BorderLight;
