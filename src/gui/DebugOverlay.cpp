@@ -2,6 +2,7 @@
 #include "core/Engine.h"
 #include "core/Time.h"
 #include "renderer/world/StaticWorldRenderer.h"
+#include "bsp/BSPRenderer.h"
 #include <sstream>
 #include <iomanip>
 
@@ -163,6 +164,41 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
     oss.str("");
     oss << "World Objects: " << worldRenderer.GetObjectCount();
     renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+    y += lineHeight;
+
+    // BSP Stats section (if BSP is loaded)
+    auto& bspRenderer = BSPRenderer::Instance();
+    if (bspRenderer.HasBSP()) {
+        y += 4;
+        renderer.DrawText("-- BSP Stats --", x, y, Colors::AccentLight, 1.0f);
+        y += lineHeight;
+
+        auto stats = bspRenderer.GetStats();
+
+        oss.str("");
+        oss << "BSP Nodes: " << stats.numNodes;
+        renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+        y += lineHeight;
+
+        oss.str("");
+        oss << "BSP Leafs: " << stats.numLeafs;
+        renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+        y += lineHeight;
+
+        oss.str("");
+        oss << "BSP Faces: " << stats.numFaces;
+        renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+        y += lineHeight;
+
+        oss.str("");
+        oss << "Rendered Faces: " << bspRenderer.GetRenderedFaces();
+        renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+        y += lineHeight;
+
+        oss.str("");
+        oss << "Tree Depth: " << stats.maxTreeDepth;
+        renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+    }
 }
 
 } // namespace GUI

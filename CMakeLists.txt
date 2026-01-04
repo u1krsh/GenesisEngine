@@ -72,6 +72,11 @@ set(ENGINE_SOURCES
     # Map System
     src/map/MapLoader.cpp
     src/map/MapRenderer.cpp
+
+    # BSP System
+    src/bsp/BSPTree.cpp
+    src/bsp/BSPCompiler.cpp
+    src/bsp/BSPRenderer.cpp
 )
 
 set(ENGINE_HEADERS
@@ -132,6 +137,12 @@ set(ENGINE_HEADERS
     src/map/MeshLibrary.h
     src/map/MapLoader.h
     src/map/MapRenderer.h
+
+    # BSP System
+    src/bsp/BSPTypes.h
+    src/bsp/BSPTree.h
+    src/bsp/BSPCompiler.h
+    src/bsp/BSPRenderer.h
 )
 
 add_library(GenesisEngineLib STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})

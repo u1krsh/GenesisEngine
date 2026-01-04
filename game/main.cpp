@@ -14,6 +14,7 @@
 #include "world/WorldCollision.h"
 #include "map/MapRenderer.h"
 #include "map/Brush.h"
+#include "bsp/BSPRenderer.h"
 #include "Player.h"
 
 #include <algorithm>  // for std::max
@@ -28,6 +29,7 @@ static std::shared_ptr<Shader> g_debugShader;
 static std::shared_ptr<Shader> g_basicShader;
 static Game::Player g_player;
 static bool g_showCollisionDebug = false;
+static bool g_useBSPRendering = false;  // Toggle between StaticWorld and BSP rendering
 
 // Debug visualization meshes (grid, axes)
 static MeshPtr g_gridMesh;
@@ -129,6 +131,21 @@ bool OnInit() {
 
     LOG_INFO("Game", "Map loaded with " + std::to_string(mapRenderer.GetBrushCount()) + " brushes");
 
+    // ========================================================================
+    // BSP Compilation - Compile map to BSP tree for alternative rendering
+    // ========================================================================
+    if (mapRenderer.HasMap()) {
+        LOG_INFO("Game", "Compiling map to BSP...");
+        auto& bspRenderer = BSPRenderer::Instance();
+        bspRenderer.SetShader(g_basicShader);
+
+        if (bspRenderer.CompileMap(mapRenderer.GetActiveMap())) {
+            LOG_INFO("Game", "BSP compilation successful! Press F4 to toggle BSP rendering.");
+        } else {
+            LOG_WARNING("Game", "BSP compilation failed, using standard rendering.");
+        }
+    }
+
     // Setup lighting from map metadata (or use defaults)
     auto& staticWorld = StaticWorldRenderer::Instance();
     if (mapRenderer.HasMap()) {
@@ -210,7 +227,7 @@ bool OnInit() {
     LOG_INFO("Game", "Game initialized successfully");
     LOG_INFO("Game", "Controls: WASD=Move, Mouse=Look, Shift=Sprint, Space=Jump, Ctrl=Crouch");
     LOG_INFO("Game", "          Left Click=Capture Mouse, Right Click=Release, ESC=Quit");
-    LOG_INFO("Game", "          F1=Collision Debug, F2=Console, F3=Debug Overlay");
+    LOG_INFO("Game", "          F1=Collision Debug, F2=Console, F3=Debug Overlay, F4=BSP Toggle");
 
     return true;
 }
@@ -352,6 +369,17 @@ void OnInput(double deltaTime) {
         GUI::DebugOverlay::Instance().Toggle();
         LOG_INFO("Debug", GUI::DebugOverlay::Instance().IsVisible() ? "Debug overlay ON (F3)" : "Debug overlay OFF (F3)");
     }
+
+    // F4 - Toggle BSP rendering mode
+    if (input.IsKeyPressed(KeyCode::F4)) {
+        g_useBSPRendering = !g_useBSPRendering;
+        if (g_useBSPRendering && !BSPRenderer::Instance().HasBSP()) {
+            g_useBSPRendering = false;
+            LOG_WARNING("Debug", "No BSP compiled, cannot enable BSP rendering");
+        } else {
+            LOG_INFO("Debug", g_useBSPRendering ? "BSP rendering ON (F4)" : "Standard rendering ON (F4)");
+        }
+    }
 }
 
 // ============================================================================
@@ -370,10 +398,16 @@ void OnRender(double interpolation) {
     auto& camera = engine.GetCamera();
 
     // ========================================================================
-    // Render Static World - All floors, walls, ceilings, props
+    // Render World - Either via BSP or StaticWorldRenderer
     // ========================================================================
-    auto& staticWorld = StaticWorldRenderer::Instance();
-    staticWorld.Render(camera);
+    if (g_useBSPRendering && BSPRenderer::Instance().HasBSP()) {
+        // BSP Tree Rendering - traverses tree using DrawNode(rootNode)
+        BSPRenderer::Instance().Render(camera);
+    } else {
+        // Standard Rendering - iterates over all meshes
+        auto& staticWorld = StaticWorldRenderer::Instance();
+        staticWorld.Render(camera);
+    }
 
     // ========================================================================
     // Render Debug Visualization (Grid, Axes)
