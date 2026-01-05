@@ -4,7 +4,10 @@
 #include "core/Logger.h"
 #include <glad/glad.h>
 #include <iostream>
+#include <iostream>
 #include <algorithm>
+#include <unordered_map>
+#include "math/Frustum.h"
 
 namespace Genesis {
 
@@ -193,46 +196,19 @@ void BSPTree::BuildMaterialBatches() {
 
     if (m_faces.empty()) return;
 
-    // Sort faces by material
-    std::vector<size_t> sortedFaces(m_faces.size());
-    for (size_t i = 0; i < m_faces.size(); i++) {
-        sortedFaces[i] = i;
-    }
+    // Simple approach: just create one batch for all geometry
+    // No index reordering needed - just use RenderAll for fastest path
+    
+    MaterialBatch batch;
+    batch.materialIndex = 0;
+    batch.firstIndex = 0;
+    batch.indexCount = static_cast<uint32_t>(m_indices.size());
+    batch.material = MaterialLibrary::Instance().Get("default");
+    batch.cachedColor = Vec3(0.5f, 0.5f, 0.5f);
+    
+    m_materialBatches.push_back(batch);
 
-    std::sort(sortedFaces.begin(), sortedFaces.end(),
-              [this](size_t a, size_t b) {
-                  return m_faces[a].materialIndex < m_faces[b].materialIndex;
-              });
-
-    // Build batches
-    // For Phase 1, we'll just batch all faces together
-    // A more sophisticated approach would reorder indices
-
-    uint32_t currentMaterial = UINT32_MAX;
-    for (size_t faceIdx : sortedFaces) {
-        const BSPFace& face = m_faces[faceIdx];
-
-        if (face.materialIndex != currentMaterial) {
-            currentMaterial = face.materialIndex;
-
-            MaterialBatch batch;
-            batch.materialIndex = currentMaterial;
-
-            // Get material from library
-            if (currentMaterial < m_materials.size()) {
-                batch.material = MaterialLibrary::Instance().Get(m_materials[currentMaterial].name);
-            }
-            if (!batch.material) {
-                batch.material = MaterialLibrary::Instance().Get("default");
-            }
-
-            batch.firstIndex = 0;
-            batch.indexCount = 0;
-            m_materialBatches.push_back(batch);
-        }
-    }
-
-    LOG_DEBUG("BSPTree", "Built " + std::to_string(m_materialBatches.size()) + " material batches");
+    LOG_DEBUG("BSPTree", "Built 1 material batch with " + std::to_string(m_indices.size()) + " indices");
 }
 
 void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
@@ -265,9 +241,10 @@ void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
 }
 
 void BSPTree::RenderWithCulling(const FPSCamera& camera, Shader& shader) {
-    // Phase 1.5: Add frustum culling
-    // For now, same as Render()
-    Render(camera, shader);
+    // For now, just render everything in a single draw call
+    // This matches standard rendering speed
+    RenderAll(shader);
+    m_lastFrameLeafs = static_cast<uint32_t>(m_leafs.size());
 }
 
 void BSPTree::RenderAll(Shader& shader) {
@@ -309,49 +286,94 @@ void BSPTree::RenderWireframe(const FPSCamera& camera, Shader& shader) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
+
+
 void BSPTree::DrawNode(int32_t nodeIndex, const Vec3& cameraPos, Shader& shader) {
-    if (nodeIndex < 0 || nodeIndex >= static_cast<int32_t>(m_nodes.size())) {
-        return;
+    // Original DrawNode (no culling)
+    if (nodeIndex < 0 || nodeIndex >= static_cast<int32_t>(m_nodes.size())) return;
+    m_lastFrameNodes++;
+    const BSPNode& node = m_nodes[nodeIndex];
+    if (node.planeIndex >= m_planes.size()) return; // Safety check
+    const BSPPlane& plane = m_planes[node.planeIndex];
+    
+    float dist = plane.ClassifyPoint(cameraPos);
+    if (dist >= 0) {
+        if (node.IsFrontLeaf()) DrawLeaf(node.GetFrontLeafIndex(), shader);
+        else DrawNode(node.frontChild, cameraPos, shader);
+        if (node.IsBackLeaf()) DrawLeaf(node.GetBackLeafIndex(), shader);
+        else DrawNode(node.backChild, cameraPos, shader);
+    } else {
+        if (node.IsBackLeaf()) DrawLeaf(node.GetBackLeafIndex(), shader);
+        else DrawNode(node.backChild, cameraPos, shader);
+        if (node.IsFrontLeaf()) DrawLeaf(node.GetFrontLeafIndex(), shader);
+        else DrawNode(node.frontChild, cameraPos, shader);
+    }
+}
+
+void BSPTree::DrawNodeWithCulling(int32_t nodeIndex, const Vec3& cameraPos, Shader& shader, const Frustum& frustum) {
+    if (nodeIndex < 0 || nodeIndex >= static_cast<int32_t>(m_nodes.size())) return;
+
+    const BSPNode& node = m_nodes[nodeIndex];
+    
+    // Safety check for plane index
+    if (node.planeIndex >= m_planes.size()) return;
+
+    // Check node bounds against frustum
+    if (!frustum.IsBoxVisible(node.boundsMin, node.boundsMax)) {
+        return; // Culled!
     }
 
     m_lastFrameNodes++;
-
-    const BSPNode& node = m_nodes[nodeIndex];
+    
     const BSPPlane& plane = m_planes[node.planeIndex];
-
     float dist = plane.ClassifyPoint(cameraPos);
 
-    // Draw front-to-back for better z-buffer utilization
-    if (dist >= 0) {
-        // Camera is in front of plane
-        // Draw front first, then back
+    // Front-to-back traversal
+    if (dist >= 0) { // Camera in front
+        // Draw Front
         if (node.IsFrontLeaf()) {
-            DrawLeaf(node.GetFrontLeafIndex(), shader);
+            const BSPLeaf& leaf = m_leafs[node.GetFrontLeafIndex()];
+            if (frustum.IsBoxVisible(leaf.boundsMin, leaf.boundsMax)) {
+                DrawLeaf(node.GetFrontLeafIndex(), shader);
+            }
         } else {
-            DrawNode(node.frontChild, cameraPos, shader);
+            DrawNodeWithCulling(node.frontChild, cameraPos, shader, frustum);
         }
-
+        
+        // Draw Back (if possibly visible)
+        // Since we are recursive, we trust the child node's bounds check to cull it if irrelevant
         if (node.IsBackLeaf()) {
-            DrawLeaf(node.GetBackLeafIndex(), shader);
+            const BSPLeaf& leaf = m_leafs[node.GetBackLeafIndex()];
+            if (frustum.IsBoxVisible(leaf.boundsMin, leaf.boundsMax)) {
+                DrawLeaf(node.GetBackLeafIndex(), shader);
+            }
         } else {
-            DrawNode(node.backChild, cameraPos, shader);
+            DrawNodeWithCulling(node.backChild, cameraPos, shader, frustum);
         }
-    } else {
-        // Camera is behind plane
-        // Draw back first, then front
+    } else { // Camera in back
+        // Draw Back first
         if (node.IsBackLeaf()) {
-            DrawLeaf(node.GetBackLeafIndex(), shader);
+            const BSPLeaf& leaf = m_leafs[node.GetBackLeafIndex()];
+            if (frustum.IsBoxVisible(leaf.boundsMin, leaf.boundsMax)) {
+                DrawLeaf(node.GetBackLeafIndex(), shader);
+            }
         } else {
-            DrawNode(node.backChild, cameraPos, shader);
+            DrawNodeWithCulling(node.backChild, cameraPos, shader, frustum);
         }
-
+        
+        // Draw Front
         if (node.IsFrontLeaf()) {
-            DrawLeaf(node.GetFrontLeafIndex(), shader);
+            const BSPLeaf& leaf = m_leafs[node.GetFrontLeafIndex()];
+            if (frustum.IsBoxVisible(leaf.boundsMin, leaf.boundsMax)) {
+                DrawLeaf(node.GetFrontLeafIndex(), shader);
+            }
         } else {
-            DrawNode(node.frontChild, cameraPos, shader);
+            DrawNodeWithCulling(node.frontChild, cameraPos, shader, frustum);
         }
     }
-}
+
+    }
+
 
 void BSPTree::DrawLeaf(uint32_t leafIndex, Shader& shader) {
     if (leafIndex >= m_leafs.size()) return;
@@ -489,6 +511,127 @@ void BSPTree::RenderWithPVS(const FPSCamera& camera, Shader& shader) {
     for (uint32_t leafIndex : visibleLeafs) {
         DrawLeaf(leafIndex, shader);
     }
+}
+
+// ============================================================================
+// OPTIMIZED RENDERING FUNCTIONS
+// ============================================================================
+
+void BSPTree::BuildLeafFaceLookup() {
+    // Build a direct lookup: each leaf -> contiguous index range
+    // This enables O(1) access to each leaf's geometry
+    
+    m_leafIndexRanges.clear();
+    m_leafIndexRanges.resize(m_leafs.size());
+    
+    // For each leaf, find its faces in the reordered index buffer
+    // Since BuildMaterialBatches reordered indices, we need to track where each leaf's
+    // geometry ended up. For now, we'll just compute bounds.
+    
+    // Simpler approach: each leaf has direct index ranges via firstFace/numFaces
+    // pointing into m_leafFaces -> m_faces -> indices
+    // We don't need to recompute - just use this existing structure
+    
+    for (uint32_t i = 0; i < m_leafs.size(); i++) {
+        const BSPLeaf& leaf = m_leafs[i];
+        // Count total indices for this leaf
+        uint32_t totalIndices = 0;
+        for (uint32_t f = 0; f < leaf.numFaces; f++) {
+            uint32_t faceIdx = m_leafFaces[leaf.firstFace + f];
+            if (faceIdx < m_faces.size()) {
+                totalIndices += m_faces[faceIdx].numIndices;
+            }
+        }
+        m_leafIndexRanges[i].indexCount = totalIndices;
+        m_leafIndexRanges[i].firstIndex = 0; // Will be set if we rebuild per-leaf
+    }
+    
+    m_batchedIndicesBuilt = true;
+    LOG_DEBUG("BSPTree", "Built leaf index ranges for " + std::to_string(m_leafs.size()) + " leaves");
+}
+
+void BSPTree::RenderBatched(Shader& shader) {
+    // Render using pre-built material batches - ONE draw call per material
+    if (!m_gpuReady || m_materialBatches.empty()) {
+        RenderAll(shader);
+        return;
+    }
+    
+    shader.Bind();
+    glBindVertexArray(m_vao);
+    
+    uint32_t totalDrawn = 0;
+    
+    for (const auto& batch : m_materialBatches) {
+        if (batch.indexCount == 0) continue;
+        
+        // Set material color (cached, no lookup overhead)
+        shader.SetVec3("u_BaseColor", batch.cachedColor);
+        
+        // Single draw call for all geometry with this material
+        glDrawElements(GL_TRIANGLES,
+                      static_cast<GLsizei>(batch.indexCount),
+                      GL_UNSIGNED_INT,
+                      reinterpret_cast<void*>(batch.firstIndex * sizeof(uint32_t)));
+        
+        totalDrawn += batch.indexCount;
+    }
+    
+    glBindVertexArray(0);
+    m_lastFrameFaces = totalDrawn / 3;
+}
+
+void BSPTree::RenderBatchedWithVisibility(Shader& shader, const std::vector<bool>& leafVisibility) {
+    // Render only visible leaves using glMultiDrawElements
+    if (!m_gpuReady) {
+        RenderAll(shader);
+        return;
+    }
+    
+    // Collect draw commands for visible leaves
+    static std::vector<GLsizei> counts;
+    static std::vector<const void*> offsets;
+    counts.clear();
+    offsets.clear();
+    
+    uint32_t visibleLeafCount = 0;
+    
+    for (uint32_t i = 0; i < m_leafs.size() && i < leafVisibility.size(); i++) {
+        if (!leafVisibility[i]) continue;
+        
+        const BSPLeaf& leaf = m_leafs[i];
+        if (leaf.numFaces == 0) continue;
+        
+        visibleLeafCount++;
+        
+        // Add all faces from this leaf
+        for (uint32_t f = 0; f < leaf.numFaces; f++) {
+            uint32_t faceIdx = m_leafFaces[leaf.firstFace + f];
+            if (faceIdx < m_faces.size()) {
+                const BSPFace& face = m_faces[faceIdx];
+                if (face.numIndices > 0) {
+                    counts.push_back(static_cast<GLsizei>(face.numIndices));
+                    offsets.push_back(reinterpret_cast<const void*>(face.firstIndex * sizeof(uint32_t)));
+                }
+            }
+        }
+    }
+    
+    m_lastFrameLeafs = visibleLeafCount;
+    
+    if (counts.empty()) return;
+    
+    shader.Bind();
+    glBindVertexArray(m_vao);
+    
+    glMultiDrawElements(GL_TRIANGLES,
+                        counts.data(),
+                        GL_UNSIGNED_INT,
+                        offsets.data(),
+                        static_cast<GLsizei>(counts.size()));
+    
+    glBindVertexArray(0);
+    m_lastFrameFaces = static_cast<uint32_t>(counts.size());
 }
 
 } // namespace Genesis

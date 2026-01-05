@@ -32,7 +32,7 @@ static std::shared_ptr<Shader> g_basicShader;
 static Game::Player g_player;
 static bool g_showCollisionDebug = false;
 static bool g_showPVSDebug = false;       // F6 - Show PVS visualization
-static bool g_useBSPRendering = false;  // Toggle between StaticWorld and BSP rendering
+static bool g_useBSPRendering = false;  // Standard rendering by default (faster), press B to toggle BSP
 
 // Debug visualization meshes (grid, axes)
 static MeshPtr g_gridMesh;
@@ -114,21 +114,24 @@ bool OnInit() {
 
     auto& mapRenderer = MapRenderer::Instance();
 
-    // Load the test map (you can switch to .json or .map format)
-    if (!mapRenderer.LoadMap("bsp_demo.json")) {
-        LOG_WARNING("Game", "Failed to load bsp_demo.json, trying testmap.json...");
-        if (!mapRenderer.LoadMap("testmap.json")) {
-            LOG_ERROR("Game", "Failed to load any map file!");
-            // Fall back to a simple floor
-            auto& staticWorld = StaticWorldRenderer::Instance();
-            staticWorld.Clear();
-            auto groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
-            auto matFloor = MaterialLibrary::Instance().CreateSolidColor("Floor", Vec3(0.15f, 0.15f, 0.18f));
-            staticWorld.AddFloor(groundPlane, matFloor, glm::translate(Mat4(1.0f), Vec3(0.0f, 0.0f, 0.0f)));
-            staticWorld.SetDirectionalLight(Vec3(0.5f, 1.0f, 0.3f), Vec3(1.0f, 0.98f, 0.95f), 1.0f);
-            staticWorld.SetAmbientLight(Vec3(0.15f, 0.15f, 0.2f), 1.0f);
-            staticWorld.RebuildBatches();
-            SetupWorldCollision();
+    // Load the test map - try large_culling_demo.json first for culling demo
+    if (!mapRenderer.LoadMap("large_culling_demo.json")) {
+        LOG_WARNING("Game", "Failed to load large_culling_demo.json, trying bsp_demo.json...");
+        if (!mapRenderer.LoadMap("bsp_demo.json")) {
+            LOG_WARNING("Game", "Failed to load bsp_demo.json, trying testmap.json...");
+            if (!mapRenderer.LoadMap("testmap.json")) {
+                LOG_ERROR("Game", "Failed to load any map file!");
+                // Fall back to a simple floor
+                auto& staticWorld = StaticWorldRenderer::Instance();
+                staticWorld.Clear();
+                auto groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
+                auto matFloor = MaterialLibrary::Instance().CreateSolidColor("Floor", Vec3(0.15f, 0.15f, 0.18f));
+                staticWorld.AddFloor(groundPlane, matFloor, glm::translate(Mat4(1.0f), Vec3(0.0f, 0.0f, 0.0f)));
+                staticWorld.SetDirectionalLight(Vec3(0.5f, 1.0f, 0.3f), Vec3(1.0f, 0.98f, 0.95f), 1.0f);
+                staticWorld.SetAmbientLight(Vec3(0.15f, 0.15f, 0.2f), 1.0f);
+                staticWorld.RebuildBatches();
+                SetupWorldCollision();
+            }
         }
     }
 
@@ -143,7 +146,8 @@ bool OnInit() {
         bspRenderer.SetShader(g_basicShader);
 
         if (bspRenderer.CompileMap(mapRenderer.GetActiveMap())) {
-            LOG_INFO("Game", "BSP compilation successful! Press F4 to toggle BSP rendering.");
+            LOG_INFO("Game", "BSP compilation successful! Map: " + mapRenderer.GetActiveMap()->GetName() + 
+                     ", Brushes: " + std::to_string(mapRenderer.GetBrushCount()));
         } else {
             LOG_WARNING("Game", "BSP compilation failed, using standard rendering.");
         }
@@ -451,12 +455,10 @@ void OnInput(double deltaTime) {
         g_player.GetController().Jump();
     }
 
-    // F1 - Toggle collision debug view (also enables debug overlay)
+    // F1 - Toggle debug overlay (text panel with stats)
     if (input.IsKeyPressed(KeyCode::F1)) {
-        g_showCollisionDebug = !g_showCollisionDebug;
-        // Also toggle debug overlay directly
-        GUI::DebugOverlay::Instance().SetVisible(g_showCollisionDebug);
-        LOG_INFO("Debug", g_showCollisionDebug ? "Collision debug + overlay ON" : "Collision debug + overlay OFF");
+        GUI::DebugOverlay::Instance().Toggle();
+        LOG_INFO("Debug", GUI::DebugOverlay::Instance().IsVisible() ? "Debug overlay ON" : "Debug overlay OFF");
     }
 
     // F2 - Toggle console (alternative to ~ key)
@@ -465,10 +467,10 @@ void OnInput(double deltaTime) {
         LOG_INFO("Debug", "Console toggled via F2");
     }
 
-    // F3 - Toggle debug overlay directly (without collision boxes)
+    // F3 - Toggle collision debug lines (3D wireframe boxes)
     if (input.IsKeyPressed(KeyCode::F3)) {
-        GUI::DebugOverlay::Instance().Toggle();
-        LOG_INFO("Debug", GUI::DebugOverlay::Instance().IsVisible() ? "Debug overlay ON (F3)" : "Debug overlay OFF (F3)");
+        g_showCollisionDebug = !g_showCollisionDebug;
+        LOG_INFO("Debug", g_showCollisionDebug ? "Collision lines ON" : "Collision lines OFF");
     }
 
     // F4 - Toggle BSP rendering mode

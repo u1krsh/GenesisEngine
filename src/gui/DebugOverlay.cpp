@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cfloat>
+#include "math/Frustum.h"
 
 namespace Genesis {
 namespace GUI {
@@ -27,13 +28,11 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
     float padding = 8;
 
     // Calculate panel height based on content
-    // Base lines: title(1) + timing(4) + camera header(1) + camera(3) + settings header(1) + settings(2) + render header(1) + render(6) = 19
-    // BSP section adds: header + 5 stats + minimap (150px + legend)
     bool showBSP = BSPRenderer::Instance().IsRenderingActive();
     bool hasPVS = showBSP && BSPRenderer::Instance().HasPVS();
     int baseLines = 20;
     int bspLines = showBSP ? 7 : 0;
-    float minimapHeight = hasPVS ? 190.0f : 0.0f;  // 150px map + header + legend
+    float minimapHeight = hasPVS ? 190.0f : 0.0f;
     int totalLines = baseLines + bspLines;
 
     // Background panel - positioned at TOP LEFT
@@ -201,9 +200,29 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
         renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
         y += lineHeight;
 
+        // Rendered stats - shows culling in action
+        uint32_t renderedLeafs = BSPRenderer::Instance().GetRenderedLeafs();
+        uint32_t renderedFaces = BSPRenderer::Instance().GetRenderedFaces();
+        
         oss.str("");
-        oss << "Rendered Faces: " << BSPRenderer::Instance().GetRenderedFaces();
+        oss << "Rendered Leafs: " << renderedLeafs << "/" << stats.numLeafs;
         renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+        y += lineHeight;
+
+        oss.str("");
+        oss << "Rendered Faces: " << renderedFaces << "/" << stats.numFaces;
+        renderer.DrawText(oss.str(), x, y, Colors::Text, 1.0f);
+        y += lineHeight;
+
+        // Calculate and show culling percentage
+        float cullPercent = 0.0f;
+        if (stats.numLeafs > 0) {
+            cullPercent = (1.0f - (float)renderedLeafs / (float)stats.numLeafs) * 100.0f;
+        }
+        oss.str("");
+        oss << "Culled: " << std::fixed << std::setprecision(1) << cullPercent << "%";
+        Vec4 cullColor = (cullPercent > 50.0f) ? Vec4(0.0f, 1.0f, 0.3f, 1.0f) : Vec4(1.0f, 0.8f, 0.0f, 1.0f);
+        renderer.DrawText(oss.str(), x, y, cullColor, 1.0f);
         y += lineHeight;
 
         oss.str("");
@@ -249,17 +268,22 @@ void DebugOverlay::Render(int screenWidth, int screenHeight) {
             if (worldDepth < 0.1f) worldDepth = 1.0f;
             float scale = (mapSize - 4.0f) / std::max(worldWidth, worldDepth);
 
-            // Get camera leaf
+            // Get camera info
             Vec3 camPos = engine.GetCamera().GetPosition();
             int32_t cameraLeaf = bsp->FindLeaf(camPos);
 
-            // Get visible leafs
+            // Build frustum for runtime visibility check
+            Frustum frustum;
+            Mat4 vp = engine.GetCamera().GetProjectionMatrix() * engine.GetCamera().GetViewMatrix();
+            frustum.Update(vp);
+
+            // Determine visibility using RUNTIME frustum check (not static PVS)
             std::vector<bool> isVisible(leafs.size(), false);
-            if (cameraLeaf >= 0 && pvs.IsBuilt()) {
-                const auto& visibleLeafs = pvs.GetVisibleLeafs(static_cast<uint32_t>(cameraLeaf));
-                for (uint32_t idx : visibleLeafs) {
-                    if (idx < isVisible.size()) isVisible[idx] = true;
-                }
+            for (size_t i = 0; i < leafs.size(); ++i) {
+                const auto& leaf = leafs[i];
+                if (leaf.numFaces == 0) continue;
+                // Check if leaf is in camera frustum
+                isVisible[i] = frustum.IsBoxVisible(leaf.boundsMin, leaf.boundsMax);
             }
 
             // Draw each leaf

@@ -13,8 +13,10 @@
 namespace Genesis {
 
 // Forward declarations
+// Forward declarations
 class FPSCamera;
 class Shader;
+class Frustum;
 
 // ============================================================================
 // BSP Tree - The compiled BSP structure for a map
@@ -152,14 +154,24 @@ public:
     void ClearGPUResources();
 
 private:
-    // Tree traversal
+    // Draw a single node (recursive)
     void DrawNode(int32_t nodeIndex, const Vec3& cameraPos, Shader& shader);
+    
+    // Draw node with frustum culling
+    void DrawNodeWithCulling(int32_t nodeIndex, const Vec3& cameraPos, Shader& shader, const Frustum& frustum);
+
+    // Draw a single leaf
     void DrawLeaf(uint32_t leafIndex, Shader& shader);
     void DrawFace(const BSPFace& face, Shader& shader);
 
     // GPU resource management
     void UploadGeometry();
     void BuildMaterialBatches();
+    void BuildLeafFaceLookup();  // Build lookup for fast leaf visibility checks
+
+    // Fast batched rendering (one draw call per material)
+    void RenderBatched(Shader& shader);
+    void RenderBatchedWithVisibility(Shader& shader, const std::vector<bool>& leafVisibility);
 
 private:
     // BSP data
@@ -192,8 +204,18 @@ private:
         MaterialPtr material;
         uint32_t firstIndex;
         uint32_t indexCount;
+        Vec3 cachedColor = Vec3(0.5f);  // Pre-cached material color
     };
     std::vector<MaterialBatch> m_materialBatches;
+
+    // Per-leaf index ranges for fast culled rendering
+    // Each leaf maps to a range in the batched index buffer
+    struct LeafIndexRange {
+        uint32_t firstIndex;
+        uint32_t indexCount;
+    };
+    std::vector<LeafIndexRange> m_leafIndexRanges;
+    bool m_batchedIndicesBuilt = false;
 
     // Frame stats
     mutable uint32_t m_lastFrameFaces = 0;

@@ -581,6 +581,31 @@ int32_t BSPCompiler::BuildTree(std::vector<CompileFace>& faces, uint32_t depth) 
     node.frontChild = BuildTree(frontFaces, depth + 1);
     node.backChild = BuildTree(backFaces, depth + 1);
 
+    // Calculate node bounds by merging children bounds
+    node.boundsMin = Vec3(std::numeric_limits<float>::max());
+    node.boundsMax = Vec3(std::numeric_limits<float>::lowest());
+
+    auto ExpandBounds = [&](int32_t childIndex) {
+        Vec3 cMin, cMax;
+        if (childIndex < 0) {
+            // Leaf
+            uint32_t idx = static_cast<uint32_t>(-(childIndex + 1));
+            const auto& leaf = m_bsp->GetLeafs()[idx];
+            cMin = leaf.boundsMin;
+            cMax = leaf.boundsMax;
+        } else {
+            // Node
+            const auto& n = m_bsp->GetNodes()[childIndex];
+            cMin = n.boundsMin;
+            cMax = n.boundsMax;
+        }
+        node.boundsMin = glm::min(node.boundsMin, cMin);
+        node.boundsMax = glm::max(node.boundsMax, cMax);
+    };
+
+    ExpandBounds(node.frontChild);
+    ExpandBounds(node.backChild);
+
     uint32_t nodeIdx = static_cast<uint32_t>(m_bsp->GetNodes().size());
     m_bsp->GetNodes().push_back(node);
 

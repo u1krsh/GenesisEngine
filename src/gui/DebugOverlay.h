@@ -22,10 +22,16 @@ public:
     void SetVisible(bool visible) { m_forceVisible = visible; }
     bool IsVisible() const { return m_forceVisible; }
     void Toggle() { m_forceVisible = !m_forceVisible; }
+    
+    // Detailed stats (F3) - shows BSP, PVS, collision, minimap
+    void SetShowDetailed(bool show) { m_showDetailed = show; }
+    bool GetShowDetailed() const { return m_showDetailed; }
+    void ToggleDetailed() { m_showDetailed = !m_showDetailed; }
 
 private:
     DebugOverlay() = default;
     bool m_forceVisible = false;
+    bool m_showDetailed = false;  // F3 for detailed stats
 };
 
 } // namespace GUI

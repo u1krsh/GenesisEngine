@@ -318,6 +318,7 @@ void GUIRenderer::BeginFrame(int screenWidth, int screenHeight) {
     m_screenWidth = screenWidth;
     m_screenHeight = screenHeight;
     m_vertices.clear();
+    m_vertices.reserve(INITIAL_VERTEX_CAPACITY);  // Pre-allocate to avoid reallocs
     m_clipStack.clear();
 }
 
@@ -330,12 +331,12 @@ void GUIRenderer::Flush() {
 
     // Setup state for 2D GUI rendering
     glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);  // Don't write to depth buffer
+    glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_CULL_FACE);  // GUI quads may have any winding
+    glDisable(GL_CULL_FACE);
 
-    // Create orthographic projection
+    // Create orthographic projection (cached would be better but this is cheap)
     Mat4 projection = glm::ortho(0.0f, (float)m_screenWidth, (float)m_screenHeight, 0.0f, -1.0f, 1.0f);
 
     m_shader->Bind();
@@ -344,7 +345,19 @@ void GUIRenderer::Flush() {
 
     glBindVertexArray(m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, m_vertices.size() * sizeof(GUIVertex), m_vertices.data(), GL_DYNAMIC_DRAW);
+    
+    // OPTIMIZATION: Use glBufferSubData if buffer is big enough, else reallocate
+    size_t dataSize = m_vertices.size() * sizeof(GUIVertex);
+    if (dataSize <= m_vboCapacity) {
+        // Orphan the buffer for async upload, then sub-data
+        glBufferData(GL_ARRAY_BUFFER, m_vboCapacity, nullptr, GL_DYNAMIC_DRAW);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, dataSize, m_vertices.data());
+    } else {
+        // Need bigger buffer
+        m_vboCapacity = dataSize * 2;  // Double to reduce future reallocations
+        glBufferData(GL_ARRAY_BUFFER, m_vboCapacity, nullptr, GL_DYNAMIC_DRAW);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, dataSize, m_vertices.data());
+    }
 
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_vertices.size()));
 

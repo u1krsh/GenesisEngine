@@ -78,6 +78,10 @@ private:
     static constexpr int FONT_CHAR_WIDTH = 8;
     static constexpr int FONT_CHAR_HEIGHT = 12;
     static constexpr int FONT_TEXTURE_SIZE = 128;
+    
+    // Optimization: Pre-allocated buffer capacity
+    static constexpr size_t INITIAL_VERTEX_CAPACITY = 4096;
+    size_t m_vboCapacity = 0;  // Current GPU buffer capacity
 };
 
 } // namespace GUI

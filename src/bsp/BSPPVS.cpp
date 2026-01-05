@@ -84,47 +84,37 @@ void BSPPVS::BuildAdjacencyGraph(const BSPTree& tree) {
         }
     }
 
-    // For each pair of leafs, check if they're close enough to potentially see each other
-    // This is O(n^2) but only done at build time
+    // For each pair of leafs, check if they share a face (strict adjacency)
     for (uint32_t i = 0; i < m_numLeafs; ++i) {
-        // Skip leafs with no geometry - they can't be "seen"
         if (leafs[i].numFaces == 0) continue;
         
         for (uint32_t j = i + 1; j < m_numLeafs; ++j) {
-            // Skip leafs with no geometry
             if (leafs[j].numFaces == 0) continue;
 
-            // Check if bounding boxes overlap or touch
-            const float epsilon = 1.0f;  // Larger epsilon for more conservative adjacency
+            // STRICT adjacency: boxes must TOUCH on exactly one axis
+            // (not overlap on all three)
+            const float epsilon = 0.1f;  // Small epsilon for touching
             
-            // AABB overlap/touch test
-            bool xOverlap = leafs[i].boundsMax.x >= leafs[j].boundsMin.x - epsilon &&
-                           leafs[i].boundsMin.x <= leafs[j].boundsMax.x + epsilon;
-            bool yOverlap = leafs[i].boundsMax.y >= leafs[j].boundsMin.y - epsilon &&
-                           leafs[i].boundsMin.y <= leafs[j].boundsMax.y + epsilon;
-            bool zOverlap = leafs[i].boundsMax.z >= leafs[j].boundsMin.z - epsilon &&
-                           leafs[i].boundsMin.z <= leafs[j].boundsMax.z + epsilon;
-
-            // Check if exactly one dimension is touching (not overlapping)
             bool xTouching = std::abs(leafs[i].boundsMax.x - leafs[j].boundsMin.x) < epsilon ||
                             std::abs(leafs[j].boundsMax.x - leafs[i].boundsMin.x) < epsilon;
             bool yTouching = std::abs(leafs[i].boundsMax.y - leafs[j].boundsMin.y) < epsilon ||
                             std::abs(leafs[j].boundsMax.y - leafs[i].boundsMin.y) < epsilon;
             bool zTouching = std::abs(leafs[i].boundsMax.z - leafs[j].boundsMin.z) < epsilon ||
                             std::abs(leafs[j].boundsMax.z - leafs[i].boundsMin.z) < epsilon;
+            
+            // Check overlap on the OTHER two axes
+            bool xOverlap = leafs[i].boundsMax.x > leafs[j].boundsMin.x + epsilon &&
+                           leafs[i].boundsMin.x < leafs[j].boundsMax.x - epsilon;
+            bool yOverlap = leafs[i].boundsMax.y > leafs[j].boundsMin.y + epsilon &&
+                           leafs[i].boundsMin.y < leafs[j].boundsMax.y - epsilon;
+            bool zOverlap = leafs[i].boundsMax.z > leafs[j].boundsMin.z + epsilon &&
+                           leafs[i].boundsMin.z < leafs[j].boundsMax.z - epsilon;
 
-            // Adjacent if they share a face (touching on one axis, overlapping on others)
-            // OR if their bounding boxes overlap at all (conservative)
+            // Adjacent only if touching on ONE axis and overlapping on the OTHER TWO
             bool adjacent = false;
-            if ((xTouching && yOverlap && zOverlap) ||
-                (yTouching && xOverlap && zOverlap) ||
-                (zTouching && xOverlap && yOverlap)) {
-                adjacent = true;
-            }
-            // Also mark as adjacent if boxes overlap completely (conservative)
-            if (xOverlap && yOverlap && zOverlap) {
-                adjacent = true;
-            }
+            if (xTouching && yOverlap && zOverlap) adjacent = true;
+            if (yTouching && xOverlap && zOverlap) adjacent = true;
+            if (zTouching && xOverlap && yOverlap) adjacent = true;
 
             if (adjacent) {
                 m_adjacency[i].push_back(j);
@@ -151,8 +141,8 @@ void BSPPVS::ComputeLeafVisibility(uint32_t leafIndex) {
     m_visibility[leafIndex][leafIndex] = true;
 
     // Flood fill through adjacent leafs
-    // We use BFS with a maximum depth limit to prevent unbounded visibility
-    constexpr uint32_t MAX_VISIBILITY_DEPTH = 16;  // Configurable
+    // We use BFS with a maximum depth limit - lower depth = more aggressive culling
+    constexpr uint32_t MAX_VISIBILITY_DEPTH = 3;  // Reduced for tighter culling
 
     std::queue<std::pair<uint32_t, uint32_t>> queue;  // (leafIndex, depth)
     std::vector<bool> visited(m_numLeafs, false);

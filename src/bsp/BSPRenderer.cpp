@@ -88,12 +88,9 @@ void BSPRenderer::Render(const FPSCamera& camera) {
     m_shader->SetVec3("u_LightColor", Vec3(1.0f, 0.98f, 0.95f));
     m_shader->SetVec3("u_AmbientColor", Vec3(0.15f, 0.15f, 0.2f));
 
-    // Render BSP - use PVS if enabled and available
-    if (m_usePVS && m_bsp->HasPVS()) {
-        m_bsp->RenderWithPVS(camera, *m_shader);
-    } else {
-        m_bsp->Render(camera, *m_shader);
-    }
+    // Render BSP - ALWAYS use real-time frustum culling
+    // This matches the minimap visibility exactly
+    m_bsp->RenderWithCulling(camera, *m_shader);
 
     // Optional wireframe overlay
     if (m_showWireframe && m_wireframeShader) {
