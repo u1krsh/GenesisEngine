@@ -634,5 +634,159 @@ void BSPTree::RenderBatchedWithVisibility(Shader& shader, const std::vector<bool
     m_lastFrameFaces = static_cast<uint32_t>(counts.size());
 }
 
+// ============================================================================
+// COMBINED FRUSTUM + PVS OPTIMIZED RENDERING
+// ============================================================================
+
+void BSPTree::BuildOptimizedLeafData() {
+    if (m_optimizedDataBuilt) return;
+    
+    m_optimizedLeafData.clear();
+    m_optimizedLeafData.resize(m_leafs.size());
+    
+    for (uint32_t i = 0; i < m_leafs.size(); ++i) {
+        const BSPLeaf& leaf = m_leafs[i];
+        OptimizedLeafData& data = m_optimizedLeafData[i];
+        
+        // Calculate bounding sphere from AABB
+        data.boundsCenter = (leaf.boundsMin + leaf.boundsMax) * 0.5f;
+        Vec3 halfExtent = (leaf.boundsMax - leaf.boundsMin) * 0.5f;
+        data.boundsRadius = glm::length(halfExtent);
+        
+        // Calculate index range for this leaf
+        data.firstIndex = 0;  // Will be set per-draw from face data
+        data.indexCount = 0;
+        
+        for (uint32_t f = 0; f < leaf.numFaces; ++f) {
+            uint32_t faceIdx = m_leafFaces[leaf.firstFace + f];
+            if (faceIdx < m_faces.size()) {
+                data.indexCount += m_faces[faceIdx].numIndices;
+            }
+        }
+    }
+    
+    m_optimizedDataBuilt = true;
+    LOG_INFO("BSPTree", "Built optimized leaf data for " + std::to_string(m_leafs.size()) + " leaves");
+}
+
+void BSPTree::RenderOptimized(const FPSCamera& camera, Shader& shader) {
+    if (!m_gpuReady) {
+        if (!m_vertices.empty() && !m_indices.empty()) {
+            UploadGeometry();
+            m_gpuReady = true;
+        } else {
+            return;
+        }
+    }
+    
+    // Ensure optimized data is built
+    if (!m_optimizedDataBuilt) {
+        BuildOptimizedLeafData();
+    }
+    
+    m_lastFrameFaces = 0;
+    m_lastFrameLeafs = 0;
+    m_lastFrameNodes = 0;
+    
+    Vec3 camPos = camera.GetPosition();
+    
+    // 1. Find camera leaf
+    int32_t cameraLeaf = FindLeaf(camPos);
+    
+    // 2. Get PVS visible leafs (or all if no PVS)
+    const std::vector<uint32_t>* visibleLeafsPtr = nullptr;
+    std::vector<uint32_t> allLeafs;
+    
+    if (cameraLeaf >= 0 && m_pvs.IsBuilt()) {
+        visibleLeafsPtr = &m_pvs.GetVisibleLeafs(static_cast<uint32_t>(cameraLeaf));
+    } else {
+        // Fallback: all leafs with faces
+        allLeafs.reserve(m_leafs.size());
+        for (uint32_t i = 0; i < m_leafs.size(); ++i) {
+            if (m_leafs[i].numFaces > 0) {
+                allLeafs.push_back(i);
+            }
+        }
+        visibleLeafsPtr = &allLeafs;
+    }
+    
+    const std::vector<uint32_t>& visibleLeafs = *visibleLeafsPtr;
+    
+    // 3. Combined frustum test + distance sorting for front-to-back
+    m_sortedLeafsBuffer.clear();
+    m_sortedLeafsBuffer.reserve(visibleLeafs.size());
+    
+    // Build frustum from camera matrices
+    Frustum frustum;
+    frustum.Update(camera.GetProjectionMatrix() * camera.GetViewMatrix());
+    
+    for (uint32_t leafIdx : visibleLeafs) {
+        if (leafIdx >= m_optimizedLeafData.size()) continue;
+        
+        const OptimizedLeafData& data = m_optimizedLeafData[leafIdx];
+        if (data.indexCount == 0) continue;
+        
+        // Use IsBoxVisible with leaf AABB
+        const BSPLeaf& leaf = m_leafs[leafIdx];
+        if (frustum.IsBoxVisible(leaf.boundsMin, leaf.boundsMax)) {
+            float distSq = glm::distance2(camPos, data.boundsCenter);
+            m_sortedLeafsBuffer.emplace_back(distSq, leafIdx);
+        }
+    }
+    
+    // 4. Sort front-to-back (enables early-Z rejection on GPU)
+    std::sort(m_sortedLeafsBuffer.begin(), m_sortedLeafsBuffer.end());
+    
+    // 5. Render using batched draw calls
+    RenderLeafsBatched(m_sortedLeafsBuffer, shader);
+}
+
+void BSPTree::RenderLeafsBatched(const std::vector<std::pair<float, uint32_t>>& sortedLeafs, Shader& shader) {
+    if (sortedLeafs.empty()) return;
+    
+    // Prepare draw commands
+    m_drawCountsBuffer.clear();
+    m_drawOffsetsBuffer.clear();
+    m_drawCountsBuffer.reserve(sortedLeafs.size() * 4);  // Estimate
+    m_drawOffsetsBuffer.reserve(sortedLeafs.size() * 4);
+    
+    uint32_t triangleCount = 0;
+    
+    for (const auto& [distSq, leafIdx] : sortedLeafs) {
+        const BSPLeaf& leaf = m_leafs[leafIdx];
+        
+        // Add all faces from this leaf
+        for (uint32_t f = 0; f < leaf.numFaces; ++f) {
+            uint32_t faceIdx = m_leafFaces[leaf.firstFace + f];
+            if (faceIdx < m_faces.size()) {
+                const BSPFace& face = m_faces[faceIdx];
+                if (face.numIndices > 0) {
+                    m_drawCountsBuffer.push_back(static_cast<GLsizei>(face.numIndices));
+                    m_drawOffsetsBuffer.push_back(
+                        reinterpret_cast<const void*>(face.firstIndex * sizeof(uint32_t)));
+                    triangleCount += face.numIndices / 3;
+                }
+            }
+        }
+    }
+    
+    if (m_drawCountsBuffer.empty()) return;
+    
+    m_lastFrameLeafs = static_cast<uint32_t>(sortedLeafs.size());
+    m_lastFrameFaces = triangleCount;
+    
+    // Single batched draw call using glMultiDrawElements
+    shader.Bind();
+    glBindVertexArray(m_vao);
+    
+    glMultiDrawElements(GL_TRIANGLES,
+                        m_drawCountsBuffer.data(),
+                        GL_UNSIGNED_INT,
+                        m_drawOffsetsBuffer.data(),
+                        static_cast<GLsizei>(m_drawCountsBuffer.size()));
+    
+    glBindVertexArray(0);
+}
+
 } // namespace Genesis
 

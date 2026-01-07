@@ -11,6 +11,98 @@ namespace Genesis {
 void BSPCollision::Clear() {
     m_brushes.clear();
     m_planes.clear();
+    m_grid.Clear();
+}
+
+// ============================================================================
+// BSPCollision - Spatial Grid
+// ============================================================================
+
+void BSPCollision::BuildGrid() {
+    m_grid.Clear();
+    
+    if (m_brushes.empty()) return;
+    
+    // Calculate world bounds
+    m_grid.worldMin = m_brushes[0].boundsMin;
+    m_grid.worldMax = m_brushes[0].boundsMax;
+    
+    for (const auto& brush : m_brushes) {
+        m_grid.worldMin = glm::min(m_grid.worldMin, brush.boundsMin);
+        m_grid.worldMax = glm::max(m_grid.worldMax, brush.boundsMax);
+    }
+    
+    // Insert each brush into all cells it overlaps
+    for (uint32_t i = 0; i < m_brushes.size(); ++i) {
+        const auto& brush = m_brushes[i];
+        
+        int32_t minX, minY, minZ, maxX, maxY, maxZ;
+        GetCellCoords(brush.boundsMin, minX, minY, minZ);
+        GetCellCoords(brush.boundsMax, maxX, maxY, maxZ);
+        
+        for (int32_t z = minZ; z <= maxZ; ++z) {
+            for (int32_t y = minY; y <= maxY; ++y) {
+                for (int32_t x = minX; x <= maxX; ++x) {
+                    uint64_t hash = HashGridCell(x, y, z);
+                    m_grid.cells[hash].push_back(i);
+                }
+            }
+        }
+    }
+    
+    m_grid.built = true;
+}
+
+uint64_t BSPCollision::HashGridCell(int32_t x, int32_t y, int32_t z) const {
+    // Morton code-style interleaving for spatial locality
+    uint64_t hash = 0;
+    hash |= (static_cast<uint64_t>(x) & 0x1FFFFF);  // 21 bits for x
+    hash |= (static_cast<uint64_t>(y) & 0x1FFFFF) << 21;  // 21 bits for y
+    hash |= (static_cast<uint64_t>(z) & 0x1FFFFF) << 42;  // 21 bits for z
+    return hash;
+}
+
+void BSPCollision::GetCellCoords(const Vec3& pos, int32_t& x, int32_t& y, int32_t& z) const {
+    x = static_cast<int32_t>(std::floor(pos.x / GRID_CELL_SIZE));
+    y = static_cast<int32_t>(std::floor(pos.y / GRID_CELL_SIZE));
+    z = static_cast<int32_t>(std::floor(pos.z / GRID_CELL_SIZE));
+}
+
+void BSPCollision::QueryGridCells(const AABB& bounds, std::vector<uint32_t>& outBrushIndices) const {
+    outBrushIndices.clear();
+    
+    if (!m_grid.built) {
+        // Fallback: return all brushes
+        outBrushIndices.reserve(m_brushes.size());
+        for (uint32_t i = 0; i < m_brushes.size(); ++i) {
+            outBrushIndices.push_back(i);
+        }
+        return;
+    }
+    
+    int32_t minX, minY, minZ, maxX, maxY, maxZ;
+    GetCellCoords(bounds.min, minX, minY, minZ);
+    GetCellCoords(bounds.max, maxX, maxY, maxZ);
+    
+    // Collect unique brush indices from all overlapping cells
+    std::unordered_map<uint32_t, bool> seen;
+    
+    for (int32_t z = minZ; z <= maxZ; ++z) {
+        for (int32_t y = minY; y <= maxY; ++y) {
+            for (int32_t x = minX; x <= maxX; ++x) {
+                uint64_t hash = HashGridCell(x, y, z);
+                auto it = m_grid.cells.find(hash);
+                if (it != m_grid.cells.end()) {
+                    for (uint32_t brushIdx : it->second) {
+                        if (!seen[brushIdx]) {
+                            seen[brushIdx] = true;
+                            outBrushIndices.push_back(brushIdx);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -137,29 +229,42 @@ TraceResult BSPCollision::TraceCapsule(const Vec3& start, const Vec3& end,
     result.endPos = end;
     result.fraction = 1.0f;
     
-    // For a capsule, we approximate by doing a sphere trace at the center
-    // The capsule is treated as a sphere with the combined radius for horizontal
-    // and we do separate checks for vertical
-    
     // Use the largest dimension for the trace radius
     float traceRadius = capsule.radius;
     
     // Calculate the AABB of the trace for broad phase
     Vec3 traceMin = glm::min(start, end) - Vec3(traceRadius + capsule.halfHeight);
     Vec3 traceMax = glm::max(start, end) + Vec3(traceRadius + capsule.halfHeight);
+    AABB traceBounds(traceMin, traceMax);
     
-    // Test against all brushes
-    for (const auto& brush : m_brushes) {
-        // Broad phase - check if brush AABB intersects trace AABB
-        if (brush.boundsMax.x < traceMin.x || brush.boundsMin.x > traceMax.x ||
-            brush.boundsMax.y < traceMin.y || brush.boundsMin.y > traceMax.y ||
-            brush.boundsMax.z < traceMin.z || brush.boundsMin.z > traceMax.z) {
-            continue;
-        }
+    // Use spatial grid for fast brush lookup
+    if (m_grid.built) {
+        static thread_local std::vector<uint32_t> candidateBrushes;
+        QueryGridCells(traceBounds, candidateBrushes);
         
-        // For proper capsule collision, we trace the center point with an expanded radius
-        // This accounts for both the capsule radius and half height
-        TraceToBrush(brush, start, end, traceRadius, result);
+        for (uint32_t brushIdx : candidateBrushes) {
+            const auto& brush = m_brushes[brushIdx];
+            
+            // Additional AABB check (grid cells are conservative)
+            if (brush.boundsMax.x < traceMin.x || brush.boundsMin.x > traceMax.x ||
+                brush.boundsMax.y < traceMin.y || brush.boundsMin.y > traceMax.y ||
+                brush.boundsMax.z < traceMin.z || brush.boundsMin.z > traceMax.z) {
+                continue;
+            }
+            
+            TraceToBrush(brush, start, end, traceRadius, result);
+        }
+    } else {
+        // Fallback: linear scan (for when grid not built yet)
+        for (const auto& brush : m_brushes) {
+            if (brush.boundsMax.x < traceMin.x || brush.boundsMin.x > traceMax.x ||
+                brush.boundsMax.y < traceMin.y || brush.boundsMin.y > traceMax.y ||
+                brush.boundsMax.z < traceMin.z || brush.boundsMin.z > traceMax.z) {
+                continue;
+            }
+            
+            TraceToBrush(brush, start, end, traceRadius, result);
+        }
     }
     
     // Calculate end position

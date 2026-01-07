@@ -51,8 +51,10 @@ BSPTreePtr BSPCompiler::Compile(const Map& map, const Options& options) {
     m_options = options;
     m_bsp = std::make_shared<BSPTree>();
     m_materialMap.clear();
+    m_planeHashMap.clear();
     m_currentDepth = 0;
     m_maxDepthReached = 0;
+    m_planesReused = 0;
     m_lastError.clear();
 
     if (m_options.verbose) {
@@ -129,6 +131,9 @@ BSPTreePtr BSPCompiler::Compile(const Map& map, const Options& options) {
 
     // Set the BSP tree pointer in the collision system
     m_bsp->GetCollision().SetBSPTree(m_bsp.get());
+    
+    // Build spatial grid for O(log n) collision queries
+    m_bsp->GetCollision().BuildGrid();
 
     // Phase 3: Build PVS (Potentially Visible Set)
     if (m_options.buildPVS) {
@@ -658,31 +663,86 @@ void BSPCompiler::SplitFace(const CompileFace& input, const BSPPlane& plane, Com
 }
 
 
-
 uint32_t BSPCompiler::ChooseSplitPlane(const std::vector<CompileFace>& faces) {
     if (faces.empty()) return UINT32_MAX;
 
-    // Simple strategy: choose the face closest to the center
-    // This tends to create balanced trees
-
-    Vec3 center(0.0f);
-    for (const auto& face : faces) {
-        center += face.GetCenter();
-    }
-    center /= static_cast<float>(faces.size());
-
+    // SAH (Surface Area Heuristic) based split plane selection
+    // Penalizes polygon splits and prefers balanced trees
+    
+    float bestCost = std::numeric_limits<float>::max();
     uint32_t bestIdx = 0;
-    float bestDist = std::numeric_limits<float>::max();
-
-    for (uint32_t i = 0; i < faces.size(); i++) {
-        float dist = glm::length(faces[i].GetCenter() - center);
-        if (dist < bestDist) {
-            bestDist = dist;
+    
+    // Sample a subset of faces for large sets (performance optimization)
+    uint32_t sampleStep = 1;
+    if (faces.size() > 64) {
+        sampleStep = static_cast<uint32_t>(faces.size()) / 32;  // Sample ~32 planes
+    }
+    
+    for (uint32_t i = 0; i < faces.size(); i += sampleStep) {
+        uint32_t frontCount = 0, backCount = 0, splitCount = 0;
+        float cost = EvaluateSplitCost(faces, faces[i].plane, frontCount, backCount, splitCount);
+        
+        // Skip degenerate splits
+        if (frontCount == 0 || backCount == 0) {
+            cost = std::numeric_limits<float>::max();  // Penalize one-sided splits
+        }
+        
+        if (cost < bestCost) {
+            bestCost = cost;
             bestIdx = i;
         }
     }
 
     return bestIdx;
+}
+
+float BSPCompiler::EvaluateSplitCost(const std::vector<CompileFace>& faces,
+                                      const BSPPlane& plane,
+                                      uint32_t& outFrontCount,
+                                      uint32_t& outBackCount,
+                                      uint32_t& outSplitCount) {
+    outFrontCount = 0;
+    outBackCount = 0;
+    outSplitCount = 0;
+    
+    for (const auto& face : faces) {
+        FaceClassification c = ClassifyFace(face, plane);
+        switch (c) {
+            case FaceClassification::Front:
+            case FaceClassification::OnPlane:
+                outFrontCount++;
+                break;
+            case FaceClassification::Back:
+                outBackCount++;
+                break;
+            case FaceClassification::Spanning:
+                outSplitCount++;
+                outFrontCount++;  // Split produces front piece
+                outBackCount++;   // Split produces back piece
+                break;
+        }
+    }
+    
+    // SAH cost formula:
+    // - Splits are expensive (each adds 2 new faces)
+    // - Balanced trees are preferred (minimize max child size)
+    // - Slight preference for axis-aligned planes (implicit in face planes)
+    
+    constexpr float SPLIT_PENALTY = 8.0f;    // High cost for splitting polygons
+    constexpr float BALANCE_WEIGHT = 1.0f;   // Weight for tree balance
+    
+    // Imbalance cost: prefer 50/50 splits
+    float totalFaces = static_cast<float>(outFrontCount + outBackCount);
+    float imbalance = 0.0f;
+    if (totalFaces > 0.0f) {
+        float ratio = std::abs(static_cast<float>(outFrontCount) - static_cast<float>(outBackCount)) / totalFaces;
+        imbalance = ratio * BALANCE_WEIGHT * totalFaces;
+    }
+    
+    // Split cost: each split creates 2 new polygons
+    float splitCost = static_cast<float>(outSplitCount) * SPLIT_PENALTY;
+    
+    return imbalance + splitCost;
 }
 
 BSPCompiler::FaceClassification BSPCompiler::ClassifyFace(const CompileFace& face, const BSPPlane& plane) {
@@ -800,12 +860,56 @@ uint32_t BSPCompiler::GetMaterialIndex(const std::string& materialName) {
     return idx;
 }
 
-uint32_t BSPCompiler::GetPlaneIndex(const BSPPlane& plane) {
-    // For Phase 1, just add every plane
-    // Future: deduplicate similar planes
+uint64_t BSPCompiler::HashPlane(const BSPPlane& plane) const {
+    // Quantize plane components to allow for floating point tolerance
+    // Use 1000x scale for ~0.001 precision
+    auto quantize = [](float v) -> int32_t {
+        return static_cast<int32_t>(v * 1000.0f + (v >= 0 ? 0.5f : -0.5f));
+    };
+    
+    int32_t nx = quantize(plane.normal.x);
+    int32_t ny = quantize(plane.normal.y);
+    int32_t nz = quantize(plane.normal.z);
+    int32_t d = quantize(plane.distance);
+    
+    // Combine into 64-bit hash using FNV-1a style mixing
+    uint64_t hash = 14695981039346656037ULL;  // FNV offset basis
+    constexpr uint64_t FNV_PRIME = 1099511628211ULL;
+    
+    hash ^= static_cast<uint64_t>(nx); hash *= FNV_PRIME;
+    hash ^= static_cast<uint64_t>(ny); hash *= FNV_PRIME;
+    hash ^= static_cast<uint64_t>(nz); hash *= FNV_PRIME;
+    hash ^= static_cast<uint64_t>(d);  hash *= FNV_PRIME;
+    
+    return hash;
+}
 
+uint32_t BSPCompiler::GetPlaneIndex(const BSPPlane& plane) {
+    // Plane deduplication using hash map
+    uint64_t hash = HashPlane(plane);
+    
+    auto it = m_planeHashMap.find(hash);
+    if (it != m_planeHashMap.end()) {
+        // Verify it's actually the same plane (handle hash collisions)
+        const BSPPlane& existing = m_bsp->GetPlanes()[it->second];
+        float normalDiff = glm::length(existing.normal - plane.normal);
+        float distDiff = std::abs(existing.distance - plane.distance);
+        
+        // Also check for flipped plane (opposite normal, negated distance)
+        float flippedNormalDiff = glm::length(existing.normal + plane.normal);
+        float flippedDistDiff = std::abs(existing.distance + plane.distance);
+        
+        if ((normalDiff < 0.002f && distDiff < 0.002f) ||
+            (flippedNormalDiff < 0.002f && flippedDistDiff < 0.002f)) {
+            m_planesReused++;
+            return it->second;
+        }
+    }
+    
+    // New unique plane
     uint32_t idx = static_cast<uint32_t>(m_bsp->GetPlanes().size());
     m_bsp->GetPlanes().push_back(plane);
+    m_planeHashMap[hash] = idx;
     return idx;
 }
 

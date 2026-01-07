@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstdint>
 #include <bitset>
+#include <cstring>
 
 namespace Genesis {
 
@@ -12,8 +13,9 @@ namespace Genesis {
 class BSPTree;
 
 // ============================================================================
-// PVS Constants
+// PVS Constants & Compression Settings
 // ============================================================================
+constexpr uint32_t PVS_BITS_PER_WORD = 64;
 constexpr uint32_t PVS_MAX_LEAFS = 8192;  // Maximum supported leafs for PVS
 
 // ============================================================================
@@ -96,20 +98,51 @@ private:
     AABB FindPortal(const BSPTree& tree, uint32_t leafA, uint32_t leafB) const;
 
 private:
+    // ========================================================================
+    // Compression Helpers
+    // ========================================================================
+    
+    // Compress visibility bitset using simple RLE encoding
+    void CompressVisibility(uint32_t leafIndex);
+    
+    // Decompress visibility to working buffer
+    void DecompressVisibility(uint32_t leafIndex) const;
+    
+    // Set/get bits in working buffer
+    void SetVisibleBit(uint32_t leafIndex, bool visible);
+    bool GetVisibleBit(uint32_t leafIndex) const;
+    
+private:
     bool m_built = false;
     uint32_t m_numLeafs = 0;
+    uint32_t m_numWords = 0;  // Number of uint64_t words needed
 
     // Adjacency graph: for each leaf, list of adjacent leaf indices
     std::vector<std::vector<uint32_t>> m_adjacency;
 
-    // Visibility data: for each leaf, bitset of visible leafs
-    std::vector<std::vector<bool>> m_visibility;
+    // ========================================================================
+    // Optimized Visibility Storage
+    // ========================================================================
+    
+    // RLE-compressed visibility data per leaf
+    // Format: [count][value][count][value]... where:
+    //   - count is number of consecutive 64-bit words
+    //   - value is the 64-bit visibility mask (or 0x00/0xFF for runs)
+    struct CompressedPVS {
+        std::vector<uint8_t> data;      // RLE-compressed stream
+        uint32_t visibleCount = 0;      // Cached count of visible leafs
+    };
+    std::vector<CompressedPVS> m_compressedVisibility;
+    
+    // Working buffer for building visibility (reused to avoid allocations)
+    mutable std::vector<uint64_t> m_workingBuffer;
+    mutable int32_t m_workingBufferLeaf = -1;  // Which leaf is in buffer, -1 = none
 
-    // Cached visible leaf lists (computed on demand)
+    // Cached visible leaf lists (computed on demand from compressed data)
     mutable std::vector<std::vector<uint32_t>> m_visibleLeafLists;
     mutable std::vector<bool> m_visibleLeafListsValid;
 
-    // Empty list for invalid queries
+    // Empty containers for invalid queries
     static const std::vector<uint32_t> s_emptyList;
     static const std::vector<bool> s_emptyBitset;
 };

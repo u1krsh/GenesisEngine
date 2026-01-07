@@ -4,6 +4,7 @@
 #include "math/Math.h"
 #include <vector>
 #include <cstdint>
+#include <unordered_map>
 
 namespace Genesis {
 
@@ -147,6 +148,9 @@ public:
     // Clear all collision data
     void Clear();
     
+    // Build spatial grid for fast queries (call after adding all brushes)
+    void BuildGrid();
+    
     // ========================================================================
     // Trace Functions
     // ========================================================================
@@ -216,6 +220,26 @@ private:
     BSPTree* m_bspTree = nullptr;
     std::vector<BSPCollisionBrush> m_brushes;
     std::vector<BSPCollisionPlane> m_planes;
+    
+    // ========================================================================
+    // Spatial Grid for Fast Brush Queries
+    // ========================================================================
+    static constexpr float GRID_CELL_SIZE = 8.0f;  // World units per cell
+    
+    struct CollisionGrid {
+        std::unordered_map<uint64_t, std::vector<uint32_t>> cells;
+        Vec3 worldMin = Vec3(0.0f);
+        Vec3 worldMax = Vec3(0.0f);
+        bool built = false;
+        
+        void Clear() { cells.clear(); built = false; }
+    };
+    CollisionGrid m_grid;
+    
+    // Grid helper functions
+    uint64_t HashGridCell(int32_t x, int32_t y, int32_t z) const;
+    void GetCellCoords(const Vec3& pos, int32_t& x, int32_t& y, int32_t& z) const;
+    void QueryGridCells(const AABB& bounds, std::vector<uint32_t>& outBrushIndices) const;
 };
 
 } // namespace Genesis

@@ -18,8 +18,11 @@ const std::vector<bool> BSPPVS::s_emptyBitset;
 void BSPPVS::Clear() {
     m_built = false;
     m_numLeafs = 0;
+    m_numWords = 0;
     m_adjacency.clear();
-    m_visibility.clear();
+    m_compressedVisibility.clear();
+    m_workingBuffer.clear();
+    m_workingBufferLeaf = -1;
     m_visibleLeafLists.clear();
     m_visibleLeafListsValid.clear();
 }
@@ -43,23 +46,31 @@ void BSPPVS::Build(const BSPTree& tree) {
 
     LOG_INFO("BSPPVS", "Building PVS for " + std::to_string(m_numLeafs) + " leafs...");
 
+    // Calculate number of 64-bit words needed
+    m_numWords = (m_numLeafs + PVS_BITS_PER_WORD - 1) / PVS_BITS_PER_WORD;
+
     // Initialize data structures
     m_adjacency.resize(m_numLeafs);
-    m_visibility.resize(m_numLeafs);
+    m_compressedVisibility.resize(m_numLeafs);
+    m_workingBuffer.resize(m_numWords, 0);
     m_visibleLeafLists.resize(m_numLeafs);
     m_visibleLeafListsValid.resize(m_numLeafs, false);
-
-    for (uint32_t i = 0; i < m_numLeafs; ++i) {
-        m_visibility[i].resize(m_numLeafs, false);
-    }
 
     // Step 1: Build adjacency graph
     BuildAdjacencyGraph(tree);
 
-    // Step 2: Compute visibility for each leaf
+    // Step 2: Compute visibility for each leaf and compress
     for (uint32_t i = 0; i < m_numLeafs; ++i) {
+        // Clear working buffer
+        std::memset(m_workingBuffer.data(), 0, m_numWords * sizeof(uint64_t));
+        m_workingBufferLeaf = static_cast<int32_t>(i);
+        
         ComputeLeafVisibility(i);
+        CompressVisibility(i);
     }
+
+    // Clear working buffer after build
+    m_workingBufferLeaf = -1;
 
     m_built = true;
 
@@ -67,6 +78,116 @@ void BSPPVS::Build(const BSPTree& tree) {
     LOG_INFO("BSPPVS", "PVS built! Average visibility: " + 
              std::to_string(static_cast<int>(GetAverageVisibility() * 100)) + "%");
     LOG_INFO("BSPPVS", "PVS memory usage: " + std::to_string(GetMemoryUsage() / 1024) + " KB");
+}
+
+// ============================================================================
+// Compression Helpers
+// ============================================================================
+
+void BSPPVS::SetVisibleBit(uint32_t leafIndex, bool visible) {
+    uint32_t wordIdx = leafIndex / PVS_BITS_PER_WORD;
+    uint32_t bitIdx = leafIndex % PVS_BITS_PER_WORD;
+    
+    if (wordIdx < m_workingBuffer.size()) {
+        if (visible) {
+            m_workingBuffer[wordIdx] |= (1ULL << bitIdx);
+        } else {
+            m_workingBuffer[wordIdx] &= ~(1ULL << bitIdx);
+        }
+    }
+}
+
+bool BSPPVS::GetVisibleBit(uint32_t leafIndex) const {
+    uint32_t wordIdx = leafIndex / PVS_BITS_PER_WORD;
+    uint32_t bitIdx = leafIndex % PVS_BITS_PER_WORD;
+    
+    if (wordIdx < m_workingBuffer.size()) {
+        return (m_workingBuffer[wordIdx] & (1ULL << bitIdx)) != 0;
+    }
+    return false;
+}
+
+void BSPPVS::CompressVisibility(uint32_t leafIndex) {
+    CompressedPVS& compressed = m_compressedVisibility[leafIndex];
+    compressed.data.clear();
+    compressed.visibleCount = 0;
+    
+    // Simple RLE compression optimized for sparse visibility
+    // Format: For each run of identical words:
+    //   [1 byte: count] [8 bytes: word value]
+    // Special cases:
+    //   count = 0xFF means next byte is extended count
+    
+    uint32_t i = 0;
+    while (i < m_numWords) {
+        uint64_t currentWord = m_workingBuffer[i];
+        uint32_t runLength = 1;
+        
+        // Count consecutive identical words
+        while (i + runLength < m_numWords && 
+               m_workingBuffer[i + runLength] == currentWord &&
+               runLength < 254) {
+            runLength++;
+        }
+        
+        // Write run
+        compressed.data.push_back(static_cast<uint8_t>(runLength));
+        
+        // Write word value (8 bytes, little-endian)
+        for (int b = 0; b < 8; b++) {
+            compressed.data.push_back(static_cast<uint8_t>((currentWord >> (b * 8)) & 0xFF));
+        }
+        
+        // Count visible bits using popcount
+        #if defined(__GNUC__) || defined(__clang__)
+            compressed.visibleCount += __builtin_popcountll(currentWord) * runLength;
+        #else
+            // Fallback bit counting
+            uint64_t v = currentWord;
+            uint32_t c = 0;
+            while (v) { c++; v &= v - 1; }
+            compressed.visibleCount += c * runLength;
+        #endif
+        
+        i += runLength;
+    }
+}
+
+void BSPPVS::DecompressVisibility(uint32_t leafIndex) const {
+    // Skip if already decompressed
+    if (m_workingBufferLeaf == static_cast<int32_t>(leafIndex)) {
+        return;
+    }
+    
+    // Resize buffer if needed
+    if (m_workingBuffer.size() < m_numWords) {
+        m_workingBuffer.resize(m_numWords);
+    }
+    
+    // Clear buffer
+    std::memset(m_workingBuffer.data(), 0, m_numWords * sizeof(uint64_t));
+    
+    const CompressedPVS& compressed = m_compressedVisibility[leafIndex];
+    
+    uint32_t wordIdx = 0;
+    size_t dataIdx = 0;
+    
+    while (dataIdx < compressed.data.size() && wordIdx < m_numWords) {
+        uint8_t runLength = compressed.data[dataIdx++];
+        
+        // Read 8-byte word value
+        uint64_t wordValue = 0;
+        for (int b = 0; b < 8 && dataIdx < compressed.data.size(); b++) {
+            wordValue |= static_cast<uint64_t>(compressed.data[dataIdx++]) << (b * 8);
+        }
+        
+        // Fill run
+        for (uint32_t r = 0; r < runLength && wordIdx < m_numWords; r++) {
+            m_workingBuffer[wordIdx++] = wordValue;
+        }
+    }
+    
+    m_workingBufferLeaf = static_cast<int32_t>(leafIndex);
 }
 
 // ============================================================================
@@ -92,8 +213,7 @@ void BSPPVS::BuildAdjacencyGraph(const BSPTree& tree) {
             if (leafs[j].numFaces == 0) continue;
 
             // STRICT adjacency: boxes must TOUCH on exactly one axis
-            // (not overlap on all three)
-            const float epsilon = 0.1f;  // Small epsilon for touching
+            const float epsilon = 0.1f;
             
             bool xTouching = std::abs(leafs[i].boundsMax.x - leafs[j].boundsMin.x) < epsilon ||
                             std::abs(leafs[j].boundsMax.x - leafs[i].boundsMin.x) < epsilon;
@@ -138,11 +258,10 @@ void BSPPVS::BuildAdjacencyGraph(const BSPTree& tree) {
 
 void BSPPVS::ComputeLeafVisibility(uint32_t leafIndex) {
     // A leaf is always visible to itself
-    m_visibility[leafIndex][leafIndex] = true;
+    SetVisibleBit(leafIndex, true);
 
-    // Flood fill through adjacent leafs
-    // We use BFS with a maximum depth limit - lower depth = more aggressive culling
-    constexpr uint32_t MAX_VISIBILITY_DEPTH = 3;  // Reduced for tighter culling
+    // Flood fill through adjacent leafs with increased depth for better accuracy
+    constexpr uint32_t MAX_VISIBILITY_DEPTH = 5;  // Increased from 3 for better visibility
 
     std::queue<std::pair<uint32_t, uint32_t>> queue;  // (leafIndex, depth)
     std::vector<bool> visited(m_numLeafs, false);
@@ -155,7 +274,7 @@ void BSPPVS::ComputeLeafVisibility(uint32_t leafIndex) {
         queue.pop();
 
         // Mark as visible
-        m_visibility[leafIndex][currentLeaf] = true;
+        SetVisibleBit(currentLeaf, true);
 
         // Don't go deeper than max depth
         if (depth >= MAX_VISIBILITY_DEPTH) {
@@ -174,7 +293,10 @@ void BSPPVS::ComputeLeafVisibility(uint32_t leafIndex) {
 
 void BSPPVS::MarkLeafVisible(uint32_t fromLeaf, uint32_t toLeaf) {
     if (fromLeaf < m_numLeafs && toLeaf < m_numLeafs) {
-        m_visibility[fromLeaf][toLeaf] = true;
+        // Need to decompress, modify, and recompress
+        DecompressVisibility(fromLeaf);
+        SetVisibleBit(toLeaf, true);
+        CompressVisibility(fromLeaf);
         m_visibleLeafListsValid[fromLeaf] = false;  // Invalidate cache
     }
 }
@@ -187,7 +309,10 @@ bool BSPPVS::IsLeafVisible(uint32_t leafA, uint32_t leafB) const {
     if (!m_built || leafA >= m_numLeafs || leafB >= m_numLeafs) {
         return true;  // If not built, assume everything visible
     }
-    return m_visibility[leafA][leafB];
+    
+    // Decompress and check bit
+    DecompressVisibility(leafA);
+    return GetVisibleBit(leafB);
 }
 
 const std::vector<uint32_t>& BSPPVS::GetVisibleLeafs(uint32_t leafIndex) const {
@@ -198,9 +323,31 @@ const std::vector<uint32_t>& BSPPVS::GetVisibleLeafs(uint32_t leafIndex) const {
     // Build cache if needed
     if (!m_visibleLeafListsValid[leafIndex]) {
         m_visibleLeafLists[leafIndex].clear();
-        for (uint32_t i = 0; i < m_numLeafs; ++i) {
-            if (m_visibility[leafIndex][i]) {
-                m_visibleLeafLists[leafIndex].push_back(i);
+        
+        // Decompress and iterate bits
+        DecompressVisibility(leafIndex);
+        
+        for (uint32_t word = 0; word < m_numWords; ++word) {
+            uint64_t bits = m_workingBuffer[word];
+            if (bits == 0) continue;  // Skip empty words (common case)
+            
+            uint32_t baseIdx = word * PVS_BITS_PER_WORD;
+            
+            // Fast bit iteration using trailing zeros
+            while (bits != 0) {
+                #if defined(__GNUC__) || defined(__clang__)
+                    int bitPos = __builtin_ctzll(bits);
+                #else
+                    int bitPos = 0;
+                    while ((bits & (1ULL << bitPos)) == 0) bitPos++;
+                #endif
+                
+                uint32_t leafIdx = baseIdx + bitPos;
+                if (leafIdx < m_numLeafs) {
+                    m_visibleLeafLists[leafIndex].push_back(leafIdx);
+                }
+                
+                bits &= bits - 1;  // Clear lowest set bit
             }
         }
         m_visibleLeafListsValid[leafIndex] = true;
@@ -210,10 +357,9 @@ const std::vector<uint32_t>& BSPPVS::GetVisibleLeafs(uint32_t leafIndex) const {
 }
 
 const std::vector<bool>& BSPPVS::GetVisibilityBitset(uint32_t leafIndex) const {
-    if (!m_built || leafIndex >= m_numLeafs) {
-        return s_emptyBitset;
-    }
-    return m_visibility[leafIndex];
+    // This method is for debugging - we'll return empty for now
+    // as the internal format changed to compressed storage
+    return s_emptyBitset;
 }
 
 // ============================================================================
@@ -227,11 +373,7 @@ float BSPPVS::GetAverageVisibility() const {
 
     uint64_t totalVisible = 0;
     for (uint32_t i = 0; i < m_numLeafs; ++i) {
-        for (uint32_t j = 0; j < m_numLeafs; ++j) {
-            if (m_visibility[i][j]) {
-                totalVisible++;
-            }
-        }
+        totalVisible += m_compressedVisibility[i].visibleCount;
     }
 
     return static_cast<float>(totalVisible) / static_cast<float>(m_numLeafs * m_numLeafs);
@@ -246,11 +388,14 @@ size_t BSPPVS::GetMemoryUsage() const {
         bytes += adj.capacity() * sizeof(uint32_t);
     }
 
-    // Visibility data
-    bytes += m_visibility.capacity() * sizeof(std::vector<bool>);
-    for (const auto& vis : m_visibility) {
-        bytes += (vis.size() + 7) / 8;  // Bits to bytes
+    // Compressed visibility data
+    bytes += m_compressedVisibility.capacity() * sizeof(CompressedPVS);
+    for (const auto& pvs : m_compressedVisibility) {
+        bytes += pvs.data.capacity();
     }
+    
+    // Working buffer
+    bytes += m_workingBuffer.capacity() * sizeof(uint64_t);
 
     // Cached lists
     bytes += m_visibleLeafLists.capacity() * sizeof(std::vector<uint32_t>);

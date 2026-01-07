@@ -9,6 +9,7 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <algorithm>
 
 namespace Genesis {
 
@@ -136,6 +137,16 @@ public:
     void RenderWithPVS(const FPSCamera& camera, Shader& shader);
 
     // ========================================================================
+    // Optimized Rendering (Combined Frustum + PVS + Batching)
+    // ========================================================================
+
+    // Render with combined frustum + PVS culling and front-to-back sorting
+    void RenderOptimized(const FPSCamera& camera, Shader& shader);
+    
+    // Build optimized leaf data (bounding spheres for fast culling)
+    void BuildOptimizedLeafData();
+
+    // ========================================================================
     // Statistics
     // ========================================================================
 
@@ -172,6 +183,9 @@ private:
     // Fast batched rendering (one draw call per material)
     void RenderBatched(Shader& shader);
     void RenderBatchedWithVisibility(Shader& shader, const std::vector<bool>& leafVisibility);
+    
+    // Render visible leafs using glMultiDrawElements
+    void RenderLeafsBatched(const std::vector<std::pair<float, uint32_t>>& sortedLeafs, Shader& shader);
 
 private:
     // BSP data
@@ -216,6 +230,25 @@ private:
     };
     std::vector<LeafIndexRange> m_leafIndexRanges;
     bool m_batchedIndicesBuilt = false;
+
+    // ========================================================================
+    // Optimized Rendering Data
+    // ========================================================================
+    
+    // Pre-computed leaf data for fast frustum culling
+    struct OptimizedLeafData {
+        Vec3 boundsCenter;     // Center of bounding box
+        float boundsRadius;    // Bounding sphere radius
+        uint32_t firstIndex;   // First index in the index buffer
+        uint32_t indexCount;   // Number of indices for this leaf
+    };
+    std::vector<OptimizedLeafData> m_optimizedLeafData;
+    bool m_optimizedDataBuilt = false;
+    
+    // Reusable buffers for optimized rendering (avoid allocations per frame)
+    mutable std::vector<std::pair<float, uint32_t>> m_sortedLeafsBuffer;
+    mutable std::vector<GLsizei> m_drawCountsBuffer;
+    mutable std::vector<const void*> m_drawOffsetsBuffer;
 
     // Frame stats
     mutable uint32_t m_lastFrameFaces = 0;
