@@ -83,10 +83,26 @@ void BSPRenderer::Render(const FPSCamera& camera) {
     m_shader->SetMat4("u_Proj", camera.GetProjectionMatrix());
     m_shader->SetMat4("u_Model", Mat4(1.0f));  // World geometry uses identity
 
-    // Set lighting uniforms for mesh.frag
-    m_shader->SetVec3("u_LightDir", glm::normalize(Vec3(0.5f, 1.0f, 0.3f)));
-    m_shader->SetVec3("u_LightColor", Vec3(1.0f, 0.98f, 0.95f));
-    m_shader->SetVec3("u_AmbientColor", Vec3(0.15f, 0.15f, 0.2f));
+    // Check if we have a baked lightmap
+    bool hasLightmap = m_bsp->HasLightmap();
+    
+    if (hasLightmap) {
+        // Bind lightmap texture to unit 1
+        m_bsp->BindLightmapTexture(1);
+        m_shader->SetInt("lightmapTexture", 1);
+        m_shader->SetInt("hasLightmap", 1);
+        
+        // For lightmap shader, we don't need dynamic lighting
+        m_shader->SetVec3("u_Color", Vec3(1.0f));
+        m_shader->SetInt("hasDiffuseTexture", 0);
+    } else {
+        // Fall back to dynamic lighting if no lightmap
+        m_shader->SetInt("hasLightmap", 0);
+        m_shader->SetVec3("u_Color", Vec3(1.0f, 1.0f, 1.0f));  // Fix for black rendering!
+        m_shader->SetVec3("u_LightDir", glm::normalize(Vec3(0.5f, 1.0f, 0.3f)));
+        m_shader->SetVec3("u_LightColor", Vec3(1.0f, 0.98f, 0.95f));
+        m_shader->SetVec3("u_AmbientColor", Vec3(0.15f, 0.15f, 0.2f));
+    }
 
     // Render BSP - ALWAYS use real-time frustum culling
     // This matches the minimap visibility exactly
@@ -118,9 +134,10 @@ bool BSPRenderer::InitializeShaders() {
     // Create default BSP shader if not set
     if (!m_shader) {
         m_shader = std::make_shared<Shader>();
-        if (!m_shader->LoadFromFiles("assets/shaders/mesh.vert", "assets/shaders/mesh.frag")) {
-            LOG_WARNING("BSPRenderer", "Failed to load default mesh shader, trying bsp shader");
-            if (!m_shader->LoadFromFiles("assets/shaders/bsp.vert", "assets/shaders/bsp.frag")) {
+        // Try loading the dedicated lightmap shader first
+        if (!m_shader->LoadFromFiles("assets/shaders/bsp_lightmap.vert", "assets/shaders/bsp_lightmap.frag")) {
+            LOG_WARNING("BSPRenderer", "Failed to load lightmap shader, trying default mesh shader");
+            if (!m_shader->LoadFromFiles("assets/shaders/mesh.vert", "assets/shaders/mesh.frag")) {
                 LOG_ERROR("BSPRenderer", "Failed to load any shader for BSP rendering");
                 return false;
             }

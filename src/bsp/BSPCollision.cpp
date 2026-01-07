@@ -84,8 +84,11 @@ void BSPCollision::QueryGridCells(const AABB& bounds, std::vector<uint32_t>& out
     GetCellCoords(bounds.min, minX, minY, minZ);
     GetCellCoords(bounds.max, maxX, maxY, maxZ);
     
-    // Collect unique brush indices from all overlapping cells
-    std::unordered_map<uint32_t, bool> seen;
+    // Fast deduplication using thread-local bitset (O(1) vs O(log n) for map)
+    static thread_local std::vector<bool> seen;
+    if (seen.size() < m_brushes.size()) {
+        seen.resize(m_brushes.size(), false);
+    }
     
     for (int32_t z = minZ; z <= maxZ; ++z) {
         for (int32_t y = minY; y <= maxY; ++y) {
@@ -102,6 +105,11 @@ void BSPCollision::QueryGridCells(const AABB& bounds, std::vector<uint32_t>& out
                 }
             }
         }
+    }
+    
+    // Clear the bits we set (avoid full vector clear)
+    for (uint32_t idx : outBrushIndices) {
+        seen[idx] = false;
     }
 }
 

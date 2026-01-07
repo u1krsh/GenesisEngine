@@ -3,6 +3,7 @@
 #include "BSPTypes.h"
 #include "BSPCollision.h"
 #include "BSPPVS.h"
+#include "LightmapAtlas.h"
 #include "renderer/mesh/Mesh.h"
 #include "renderer/material/Material.h"
 #include "renderer/material/MaterialLibrary.h"
@@ -51,6 +52,7 @@ public:
     const std::vector<BSPVertex>& GetVertices() const { return m_vertices; }
     const std::vector<uint32_t>& GetIndices() const { return m_indices; }
     const std::vector<BSPMaterial>& GetMaterials() const { return m_materials; }
+    const std::vector<StaticLight>& GetLights() const { return m_lights; }
 
     std::vector<BSPPlane>& GetPlanes() { return m_planes; }
     std::vector<BSPNode>& GetNodes() { return m_nodes; }
@@ -59,6 +61,11 @@ public:
     std::vector<BSPVertex>& GetVertices() { return m_vertices; }
     std::vector<uint32_t>& GetIndices() { return m_indices; }
     std::vector<BSPMaterial>& GetMaterials() { return m_materials; }
+    std::vector<StaticLight>& GetLights() { return m_lights; }
+    
+    // Add a static light to the scene
+    void AddLight(const StaticLight& light) { m_lights.push_back(light); }
+    void ClearLights() { m_lights.clear(); }
 
     // ========================================================================
     // Tree Queries
@@ -121,6 +128,13 @@ public:
 
     // Render wireframe overlay (for debugging)
     void RenderWireframe(const FPSCamera& camera, Shader& shader);
+
+    // ========================================================================
+    // Post-Process Updates
+    // ========================================================================
+    
+    // Update mesh data on GPU (e.g. after lightmap baking updates UVs)
+    void UpdateMesh();
 
     // ========================================================================
     // PVS (Phase 3) - Potentially Visible Set
@@ -198,6 +212,7 @@ private:
     std::vector<uint32_t> m_leafFaces;    // Face indices per leaf
     std::vector<BSPBrushRef> m_brushRefs;
     std::vector<BSPMaterial> m_materials;
+    std::vector<StaticLight> m_lights;    // Static lights for baking (Phase 4D)
     int32_t m_rootNode = 0;               // Root node index (or negative for leaf)
 
     // Collision system (Phase 2)
@@ -206,6 +221,26 @@ private:
     // PVS system (Phase 3)
     BSPPVS m_pvs;
 
+    // Lightmap atlas (Phase 4B)
+    LightmapAtlas m_lightmapAtlas;
+    uint32_t m_lightmapTexture = 0;  // OpenGL texture ID
+    bool m_lightmapUploaded = false;
+
+public:
+    // Lightmap access
+    LightmapAtlas& GetLightmapAtlas() { return m_lightmapAtlas; }
+    const LightmapAtlas& GetLightmapAtlas() const { return m_lightmapAtlas; }
+    
+    // Upload lightmap atlas to GPU
+    void UploadLightmapTexture();
+    
+    // Bind lightmap texture to specified unit
+    void BindLightmapTexture(uint32_t unit = 1) const;
+    
+    // Check if lightmap is available
+    bool HasLightmap() const { return m_lightmapUploaded; }
+
+private:
     // GPU resources
     uint32_t m_vao = 0;
     uint32_t m_vbo = 0;

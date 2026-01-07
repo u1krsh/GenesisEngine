@@ -75,7 +75,57 @@ void BSPTree::ClearGPUResources() {
         glDeleteBuffers(1, &m_ebo);
         m_ebo = 0;
     }
+    if (m_lightmapTexture) {
+        glDeleteTextures(1, &m_lightmapTexture);
+        m_lightmapTexture = 0;
+    }
     m_gpuReady = false;
+    m_lightmapUploaded = false;
+}
+
+// ============================================================================
+// Lightmap Texture Management (Phase 4B)
+// ============================================================================
+
+void BSPTree::UploadLightmapTexture() {
+    if (m_lightmapAtlas.GetPixelDataSize() == 0) return;
+    
+    // Delete old texture if exists
+    if (m_lightmapTexture) {
+        glDeleteTextures(1, &m_lightmapTexture);
+    }
+    
+    glGenTextures(1, &m_lightmapTexture);
+    glBindTexture(GL_TEXTURE_2D, m_lightmapTexture);
+    
+    // Upload RGB8 data
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8,
+                 m_lightmapAtlas.GetWidth(), m_lightmapAtlas.GetHeight(),
+                 0, GL_RGB, GL_UNSIGNED_BYTE, m_lightmapAtlas.GetPixelData());
+    
+    // Lightmap filtering: bilinear for smooth lighting
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    // Clamp to edge to prevent bleeding
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    m_lightmapUploaded = true;
+    
+    LOG_INFO("BSPTree", "Uploaded lightmap atlas: " + 
+             std::to_string(m_lightmapAtlas.GetWidth()) + "x" +
+             std::to_string(m_lightmapAtlas.GetHeight()) + 
+             " (" + std::to_string(static_cast<int>(m_lightmapAtlas.GetUtilization() * 100)) + "% used)");
+}
+
+void BSPTree::BindLightmapTexture(uint32_t unit) const {
+    if (!m_lightmapUploaded) return;
+    
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, m_lightmapTexture);
 }
 
 // ============================================================================
@@ -183,12 +233,29 @@ void BSPTree::UploadGeometry() {
                           (void*)offsetof(BSPVertex, color));
     glEnableVertexAttribArray(3);
 
+    // Lightmap TexCoord attribute (location 4) - Phase 4A
+    glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+                          (void*)offsetof(BSPVertex, lightmapCoord));
+    glEnableVertexAttribArray(4);
+
     // Upload index data
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(uint32_t),
                  m_indices.data(), GL_STATIC_DRAW);
 
     glBindVertexArray(0);
+}
+
+void BSPTree::UpdateMesh() {
+    if (!m_gpuReady || m_vbo == 0) return;
+    
+    // Bind existing VBO and update content
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    glBufferData(GL_ARRAY_BUFFER, m_vertices.size() * sizeof(BSPVertex),
+                 m_vertices.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    
+    LOG_INFO("BSPTree", "Updated mesh data on GPU (post-bake)");
 }
 
 void BSPTree::BuildMaterialBatches() {
@@ -726,9 +793,8 @@ void BSPTree::RenderOptimized(const FPSCamera& camera, Shader& shader) {
         const OptimizedLeafData& data = m_optimizedLeafData[leafIdx];
         if (data.indexCount == 0) continue;
         
-        // Use IsBoxVisible with leaf AABB
-        const BSPLeaf& leaf = m_leafs[leafIdx];
-        if (frustum.IsBoxVisible(leaf.boundsMin, leaf.boundsMax)) {
+        // Use faster bounding sphere test (cheaper than AABB)
+        if (frustum.IsSphereVisible(data.boundsCenter, data.boundsRadius)) {
             float distSq = glm::distance2(camPos, data.boundsCenter);
             m_sortedLeafsBuffer.emplace_back(distSq, leafIdx);
         }

@@ -1,0 +1,200 @@
+{
+    "name": "Moody Dungeon",
+    "author": "Antigravity",
+    "version": "1.0",
+    "description": "A dark, atmospheric test map for lightmaps",
+    "spawn_position": [
+        0,
+        5,
+        0
+    ],
+    "spawn_rotation": [
+        0,
+        0,
+        0
+    ],
+    "sun_direction": [
+        -0.5,
+        -1.0,
+        -0.2
+    ],
+    "sun_color": [
+        0.6,
+        0.7,
+        0.9
+    ],
+    "sun_intensity": 0.1,
+    "ambient_color": [
+        0.02,
+        0.02,
+        0.05
+    ],
+    "brushes": [
+        {
+            "shape": "cube",
+            "position": [
+                0,
+                -2,
+                0
+            ],
+            "size": [
+                64,
+                4,
+                64
+            ],
+            "material": "stone",
+            "name": "floor_main"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                0,
+                20,
+                0
+            ],
+            "size": [
+                64,
+                4,
+                64
+            ],
+            "material": "ceiling",
+            "name": "ceiling_main"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                -34,
+                10,
+                0
+            ],
+            "size": [
+                4,
+                24,
+                64
+            ],
+            "material": "brick",
+            "name": "wall_left"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                34,
+                10,
+                0
+            ],
+            "size": [
+                4,
+                24,
+                64
+            ],
+            "material": "brick",
+            "name": "wall_right"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                0,
+                10,
+                -34
+            ],
+            "size": [
+                64,
+                24,
+                4
+            ],
+            "material": "brick",
+            "name": "wall_back"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                0,
+                10,
+                34
+            ],
+            "size": [
+                64,
+                24,
+                4
+            ],
+            "material": "brick",
+            "name": "wall_front"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                -15,
+                5,
+                -15
+            ],
+            "size": [
+                4,
+                10,
+                4
+            ],
+            "material": "metal",
+            "name": "pillar_1"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                15,
+                5,
+                15
+            ],
+            "size": [
+                4,
+                10,
+                4
+            ],
+            "material": "metal",
+            "name": "pillar_2"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                15,
+                5,
+                -15
+            ],
+            "size": [
+                4,
+                10,
+                4
+            ],
+            "material": "metal",
+            "name": "pillar_3"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                -15,
+                5,
+                15
+            ],
+            "size": [
+                4,
+                10,
+                4
+            ],
+            "material": "metal",
+            "name": "pillar_4"
+        },
+        {
+            "shape": "cube",
+            "position": [
+                0,
+                2,
+                0
+            ],
+            "size": [
+                8,
+                4,
+                8
+            ],
+            "material": "wood",
+            "name": "platform_center"
+        }
+    ],
+    "entities": []
+}

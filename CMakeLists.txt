@@ -80,6 +80,8 @@ set(ENGINE_SOURCES
     src/bsp/BSPCollision.cpp
     src/bsp/BSPPVS.cpp
     src/bsp/BSPBuildVisualizer.cpp
+    src/bsp/LightmapAtlas.cpp
+    src/bsp/LightBaker.cpp
 )
 
 set(ENGINE_HEADERS
@@ -149,6 +151,8 @@ set(ENGINE_HEADERS
     src/bsp/BSPCollision.h
     src/bsp/BSPPVS.h
     src/bsp/BSPBuildVisualizer.h
+    src/bsp/LightmapAtlas.h
+    src/bsp/LightBaker.h
 )
 
 add_library(GenesisEngineLib STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})

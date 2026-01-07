@@ -17,6 +17,7 @@
 #include "bsp/BSPRenderer.h"
 #include "bsp/BSPTree.h"
 #include "bsp/BSPBuildVisualizer.h"
+#include "bsp/LightBaker.h"
 #include "Player.h"
 
 #include <algorithm>  // for std::max
@@ -100,8 +101,9 @@ bool OnInit() {
     // These will be used by MapLoader if brushes reference them
     matLib.CreateSolidColor("floor", Vec3(0.15f, 0.15f, 0.18f));
     matLib.CreateSolidColor("wall", Vec3(0.45f, 0.45f, 0.5f));
+    matLib.CreateSolidColor("stone", Vec3(0.2f, 0.2f, 0.22f));  // Dark stone
     matLib.CreateSolidColor("concrete", Vec3(0.5f, 0.5f, 0.52f));
-    matLib.CreateSolidColor("brick", Vec3(0.55f, 0.3f, 0.25f));
+    matLib.CreateSolidColor("brick", Vec3(0.55f, 0.3f, 0.25f)); // Reddish brick
     matLib.CreateSolidColor("metal", Vec3(0.5f, 0.5f, 0.55f));
     matLib.CreateSolidColor("wood", Vec3(0.45f, 0.3f, 0.2f));
 
@@ -114,12 +116,14 @@ bool OnInit() {
 
     auto& mapRenderer = MapRenderer::Instance();
 
-    // Load the test map - try large_culling_demo.json first for culling demo
-    if (!mapRenderer.LoadMap("large_culling_demo.json")) {
-        LOG_WARNING("Game", "Failed to load large_culling_demo.json, trying bsp_demo.json...");
-        if (!mapRenderer.LoadMap("bsp_demo.json")) {
-            LOG_WARNING("Game", "Failed to load bsp_demo.json, trying testmap.json...");
-            if (!mapRenderer.LoadMap("testmap.json")) {
+    // Load the test map - prioritize our new moody demo
+    if (!mapRenderer.LoadMap("moody_demo.json")) {
+        LOG_WARNING("Game", "Failed to load moody_demo.json, trying large_culling_demo.json...");
+        if (!mapRenderer.LoadMap("large_culling_demo.json")) {
+            LOG_WARNING("Game", "Failed to load large_culling_demo.json, trying bsp_demo.json...");
+            if (!mapRenderer.LoadMap("bsp_demo.json")) {
+                LOG_WARNING("Game", "Failed to load bsp_demo.json, trying testmap.json...");
+                if (!mapRenderer.LoadMap("testmap.json")) {
                 LOG_ERROR("Game", "Failed to load any map file!");
                 // Fall back to a simple floor
                 auto& staticWorld = StaticWorldRenderer::Instance();
@@ -133,6 +137,7 @@ bool OnInit() {
                 SetupWorldCollision();
             }
         }
+        }
     }
 
     LOG_INFO("Game", "Map loaded with " + std::to_string(mapRenderer.GetBrushCount()) + " brushes");
@@ -143,11 +148,84 @@ bool OnInit() {
     if (mapRenderer.HasMap()) {
         LOG_INFO("Game", "Compiling map to BSP...");
         auto& bspRenderer = BSPRenderer::Instance();
-        bspRenderer.SetShader(g_basicShader);
+        bspRenderer.InitializeShaders();
 
         if (bspRenderer.CompileMap(mapRenderer.GetActiveMap())) {
             LOG_INFO("Game", "BSP compilation successful! Map: " + mapRenderer.GetActiveMap()->GetName() + 
                      ", Brushes: " + std::to_string(mapRenderer.GetBrushCount()));
+            
+            // ================================================================
+            // Phase 4: Add test static lights and bake lighting
+            // ================================================================
+            auto bsp = bspRenderer.GetBSP();
+            if (bsp) {
+                LOG_INFO("Game", "Adding simple test lights near spawn...");
+                
+                // Clear any existing lights
+                bsp->ClearLights();
+                
+                // 1. Sun (Moonlight) from metadata
+                auto& meta = mapRenderer.GetActiveMap()->GetMetadata();
+                bsp->AddLight(StaticLight::CreateDirectional(
+                    meta.sunDirection,
+                    meta.sunColor,
+                    meta.sunIntensity * 1.5f // Reduced from 3.0f
+                ));
+                
+                // 2. Add colored point lights for the Pillars
+                // Pillar 1 area (Orange)
+                bsp->AddLight(StaticLight::CreatePoint(
+                    Vec3(-10.0f, 6.0f, -10.0f), 
+                    Vec3(1.0f, 0.6f, 0.2f), 
+                    2.5f, // Reduced from 4.0f
+                    30.0f
+                ));
+
+                // Pillar 2 area (Blue)
+                bsp->AddLight(StaticLight::CreatePoint(
+                    Vec3(10.0f, 6.0f, 10.0f), 
+                    Vec3(0.2f, 0.6f, 1.0f),
+                    2.5f, // Reduced from 4.0f
+                    30.0f
+                ));
+                // Pillar 3 area (Purple)
+                bsp->AddLight(StaticLight::CreatePoint(
+                    Vec3(-10.0f, 6.0f, 10.0f), 
+                    Vec3(0.8f, 0.2f, 1.0f),
+                    2.5f, 
+                    30.0f
+                ));
+                // 3. Central light (platform)
+                bsp->AddLight(StaticLight::CreatePoint(
+                    Vec3(0.0f, 8.0f, 0.0f), // Higher up
+                    Vec3(1.0f, 0.95f, 0.8f),
+                    1.2f, // Reduced from 2.0f
+                    20.0f
+                ));
+                
+                LOG_INFO("Game", "Added " + std::to_string(bsp->GetLights().size()) + " lights");
+                
+                // Bake the lighting
+                LOG_INFO("Game", "Baking lightmaps (this may take a moment)...");
+                LightBaker baker;
+                LightBaker::Options bakeOptions;
+                bakeOptions.texelsPerUnit = 2.0f;       
+                bakeOptions.maxLightmapSize = 32;       
+                bakeOptions.minLightmapSize = 4;
+                bakeOptions.ambientLight = 0.1f;       // Standard ambient
+                bakeOptions.shadowBias = 0.05f;        
+                bakeOptions.numSamples = 1;            // Hard Shadows + Smoothing (Source Style)
+                
+                bakeOptions.verbose = true;
+                
+                baker.BakeWithSceneLights(*bsp, bakeOptions);
+                
+                auto stats = baker.GetLastStats();
+                LOG_INFO("Game", "Lightmap baking complete! " + 
+                         std::to_string(stats.numTexels) + " texels, " +
+                         std::to_string(stats.numShadowRays) + " shadow rays, " +
+                         std::to_string(stats.bakeTimeSeconds) + "s");
+            }
         } else {
             LOG_WARNING("Game", "BSP compilation failed, using standard rendering.");
         }
@@ -353,6 +431,61 @@ void DrawCollisionDebug() {
         g_debugRenderer.DrawWireBox(playerPos.x, playerPos.y + stepOffset + checkHeight * 0.5f, playerPos.z,
                                      playerRadius * 2.0f, checkHeight, playerRadius * 2.0f,
                                      0.0f, 1.0f, 1.0f);
+    }
+}
+
+// ============================================================================
+// Draw Lights Debug Visualization
+// Shows static lights as colored spheres with radius indicators
+// ============================================================================
+void DrawLightsDebug() {
+    auto& bspRenderer = BSPRenderer::Instance();
+    if (!bspRenderer.HasBSP()) return;
+    
+    auto bsp = bspRenderer.GetBSP();
+    if (!bsp) return;
+    
+    const auto& lights = bsp->GetLights();
+    
+    for (const auto& light : lights) {
+        if (light.type == StaticLightType::Point) {
+            // Draw point light as a colored sphere
+            Vec3 pos = light.position;
+            Vec3 col = light.color;
+            
+            // Inner sphere (bright, shows position)
+            g_debugRenderer.DrawWireSphere(pos.x, pos.y, pos.z, 0.3f, col.r, col.g, col.b);
+            
+            // Outer sphere (dimmer, shows radius)
+            g_debugRenderer.DrawWireSphere(pos.x, pos.y, pos.z, light.radius, 
+                                            col.r * 0.3f, col.g * 0.3f, col.b * 0.3f);
+            
+            // Vertical line to floor (helps see light position)
+            // Approximate with a thin box
+            g_debugRenderer.DrawWireBox(pos.x, pos.y - light.radius * 0.5f, pos.z,
+                                         0.1f, light.radius, 0.1f,
+                                         col.r * 0.5f, col.g * 0.5f, col.b * 0.5f);
+        }
+        else if (light.type == StaticLightType::Directional) {
+            // Draw directional light as an arrow in the sky
+            Vec3 dir = light.direction;
+            Vec3 col = light.color;
+            
+            // Draw arrow at multiple positions across the map to show direction
+            for (float x = -50; x <= 50; x += 25.0f) {
+                for (float z = -50; z <= 50; z += 25.0f) {
+                    Vec3 start(x, 20.0f, z);
+                    Vec3 end = start + dir * 5.0f;
+                    
+                    // Arrow line (approximated with thin box)
+                    Vec3 mid = (start + end) * 0.5f;
+                    Vec3 size = glm::abs(end - start) + Vec3(0.1f);
+                    g_debugRenderer.DrawWireBox(mid.x, mid.y, mid.z,
+                                                 size.x, size.y, size.z,
+                                                 col.r, col.g, col.b);
+                }
+            }
+        }
     }
 }
 
@@ -578,6 +711,7 @@ void OnRender(double interpolation) {
         // F1 - Draw collision debug wireframes over real geometry
         if (g_showCollisionDebug) {
             DrawCollisionDebug();
+            DrawLightsDebug();  // Also show lights in collision debug view
         }
 
         // F6 - Draw PVS debug visualization (visible/culled leafs)

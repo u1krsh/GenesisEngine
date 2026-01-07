@@ -79,12 +79,15 @@ inline BSPContents operator&(BSPContents a, BSPContents b) {
 struct BSPVertex {
     Vec3 position;
     Vec3 normal;
-    Vec2 texCoord;
-    Vec3 color = Vec3(1.0f);  // Vertex color (for debugging/lightmaps)
+    Vec2 texCoord;           // UV1: Diffuse texture
+    Vec2 lightmapCoord;      // UV2: Lightmap texture (Phase 4A)
+    Vec3 color = Vec3(1.0f); // Vertex color (fallback/tint)
 
     BSPVertex() = default;
     BSPVertex(const Vec3& pos, const Vec3& norm, const Vec2& tex)
-        : position(pos), normal(norm), texCoord(tex) {}
+        : position(pos), normal(norm), texCoord(tex), lightmapCoord(Vec2(0.0f)) {}
+    BSPVertex(const Vec3& pos, const Vec3& norm, const Vec2& tex, const Vec2& lmCoord)
+        : position(pos), normal(norm), texCoord(tex), lightmapCoord(lmCoord) {}
 };
 
 // ============================================================================
@@ -105,6 +108,11 @@ struct BSPFace {
     // Bounding box (for culling)
     Vec3 boundsMin = Vec3(0.0f);
     Vec3 boundsMax = Vec3(0.0f);
+    
+    // Lightmap data (Phase 4A)
+    uint32_t lightmapIndex = 0;           // Index into lightmap atlas/array
+    Vec2 lightmapMins = Vec2(0.0f);       // UV offset in lightmap atlas
+    Vec2 lightmapSize = Vec2(1.0f);       // UV size in lightmap atlas
 };
 
 // ============================================================================
@@ -190,9 +198,54 @@ struct BSPStats {
     uint32_t numIndices = 0;
     uint32_t numBrushes = 0;
     uint32_t numMaterials = 0;
+    uint32_t numLights = 0;
     uint32_t maxTreeDepth = 0;
 
     void Print() const;
+};
+
+// ============================================================================
+// Static Light Types (Phase 4D)
+// ============================================================================
+enum class StaticLightType : uint8_t {
+    Point,          // Omnidirectional light at a position
+    Directional     // Sun-like parallel rays
+};
+
+// ============================================================================
+// Static Light - Scene light for baking (no runtime shadows)
+// ============================================================================
+struct StaticLight {
+    Vec3 position = Vec3(0.0f);      // Light position (Point only)
+    Vec3 direction = Vec3(0.0f, -1.0f, 0.0f);  // Light direction (Directional only)
+    Vec3 color = Vec3(1.0f);         // Light color (RGB, 0-1)
+    float intensity = 1.0f;          // Light intensity multiplier
+    float radius = 10.0f;            // Attenuation radius (Point only)
+    StaticLightType type = StaticLightType::Point;
+    
+    StaticLight() = default;
+    
+    // Convenience constructors
+    static StaticLight CreatePoint(const Vec3& pos, const Vec3& col = Vec3(1.0f), 
+                                   float intensity = 1.0f, float radius = 10.0f) {
+        StaticLight l;
+        l.position = pos;
+        l.color = col;
+        l.intensity = intensity;
+        l.radius = radius;
+        l.type = StaticLightType::Point;
+        return l;
+    }
+    
+    static StaticLight CreateDirectional(const Vec3& dir, const Vec3& col = Vec3(1.0f), 
+                                          float intensity = 1.0f) {
+        StaticLight l;
+        l.direction = glm::normalize(dir);
+        l.color = col;
+        l.intensity = intensity;
+        l.type = StaticLightType::Directional;
+        return l;
+    }
 };
 
 } // namespace Genesis

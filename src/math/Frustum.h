@@ -78,6 +78,19 @@ public:
         return true;
     }
 
+    // Check if a bounding sphere is visible (faster than box test)
+    // Sphere test is a single dot product per plane vs multiple branches for box
+    bool IsSphereVisible(const Vec3& center, float radius) const {
+        for (const auto& plane : m_planes) {
+            // Distance from center to plane
+            float distance = glm::dot(Vec3(plane), center) + plane.w;
+            if (distance < -radius) {
+                return false;  // Sphere is completely behind this plane
+            }
+        }
+        return true;
+    }
+
 private:
     std::array<Vec4, 6> m_planes; // Plane equation: ax + by + cz + d = 0 (stored as Vec4)
 };
