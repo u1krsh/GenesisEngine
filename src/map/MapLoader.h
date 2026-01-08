@@ -34,13 +34,17 @@ public:
     // ========================================================================
 
     // Load a map from file (auto-detects format)
-    MapPtr Load(const std::string& filepath);
+    // If skipBuild is true, doesn't load meshes/materials (for editor use)
+    MapPtr Load(const std::string& filepath, bool skipBuild = false);
 
     // Load from JSON file
-    MapPtr LoadJSON(const std::string& filepath);
+    MapPtr LoadJSON(const std::string& filepath, bool skipBuild = false);
 
     // Load from simple text format
-    MapPtr LoadSimple(const std::string& filepath);
+    MapPtr LoadSimple(const std::string& filepath, bool skipBuild = false);
+
+    // Load from SAU format (OracularV2 editor format)
+    MapPtr LoadSAU(const std::string& filepath, bool skipBuild = false);
 
     // Load from string (JSON)
     MapPtr LoadFromString(const std::string& jsonString);

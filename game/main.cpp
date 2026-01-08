@@ -195,6 +195,14 @@ bool OnInit() {
                     2.5f, 
                     30.0f
                 ));
+
+                // Pillar 4 area (Green)
+                bsp->AddLight(StaticLight::CreatePoint(
+                    Vec3(10.0f, 6.0f, -10.0f), 
+                    Vec3(0.2f, 1.0f, 0.2f),
+                    2.5f, 
+                    30.0f
+                ));
                 // 3. Central light (platform)
                 bsp->AddLight(StaticLight::CreatePoint(
                     Vec3(0.0f, 8.0f, 0.0f), // Higher up

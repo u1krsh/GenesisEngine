@@ -29,6 +29,30 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glm)
 
+# Fetch ImGui (for OracularV2 editor)
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG docking
+)
+FetchContent_MakeAvailable(imgui)
+
+# Build ImGui as a library with GLFW + OpenGL3 backends
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+)
+target_include_directories(imgui PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+)
+target_link_libraries(imgui PUBLIC glfw)
+
 # GLAD (local)
 add_library(glad STATIC external/glad/src/glad.c)
 target_include_directories(glad PUBLIC external/glad/include)
@@ -185,3 +209,53 @@ add_custom_command(TARGET GenesisEngine POST_BUILD
     ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:GenesisEngine>/assets
 )
 
+# ============================================================================
+# OracularV2 Map Editor
+# ============================================================================
+
+set(ORACULAR_SOURCES
+    tools/OracularV2/main.cpp
+    tools/OracularV2/EditorApp.cpp
+    tools/OracularV2/Grid.cpp
+    tools/OracularV2/Viewport.cpp
+    tools/OracularV2/ViewportLayout.cpp
+    tools/OracularV2/SelectionManager.cpp
+    tools/OracularV2/Gizmo.cpp
+    tools/OracularV2/SAUFormat.cpp
+    tools/OracularV2/BuildMap.cpp
+    tools/OracularV2/tools/BlockTool.cpp
+)
+
+set(ORACULAR_HEADERS
+    tools/OracularV2/EditorApp.h
+    tools/OracularV2/Grid.h
+    tools/OracularV2/Viewport.h
+    tools/OracularV2/ViewportLayout.h
+    tools/OracularV2/EditorBrush.h
+    tools/OracularV2/SelectionManager.h
+    tools/OracularV2/Gizmo.h
+    tools/OracularV2/SAUFormat.h
+    tools/OracularV2/BuildMap.h
+    tools/OracularV2/tools/BlockTool.h
+)
+
+add_executable(OracularV2 ${ORACULAR_SOURCES} ${ORACULAR_HEADERS})
+target_include_directories(OracularV2 PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/tools/OracularV2
+)
+
+# Find X11 for ImGui multi-viewport support on Linux
+find_package(X11 REQUIRED)
+target_link_libraries(OracularV2 PRIVATE GenesisEngineLib imgui ${X11_LIBRARIES})
+
+# Copy assets for OracularV2 too
+add_custom_command(TARGET OracularV2 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:OracularV2>/assets
+)
+
+# Set working directory for CLion/VS debugging
+set_target_properties(OracularV2 PROPERTIES
+    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)

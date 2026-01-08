@@ -185,7 +185,7 @@ MapLoader::MapLoader() {
     // Register default materials if needed
 }
 
-MapPtr MapLoader::Load(const std::string& filepath) {
+MapPtr MapLoader::Load(const std::string& filepath, bool skipBuild) {
     ClearError();
 
     std::string fullPath = m_basePath + filepath;
@@ -196,16 +196,18 @@ MapPtr MapLoader::Load(const std::string& filepath) {
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
     if (ext == ".json") {
-        return LoadJSON(fullPath);
+        return LoadJSON(fullPath, skipBuild);
+    } else if (ext == ".sau") {
+        return LoadSAU(fullPath, skipBuild);
     } else if (ext == ".map" || ext == ".txt") {
-        return LoadSimple(fullPath);
+        return LoadSimple(fullPath, skipBuild);
     } else {
         // Default to JSON
-        return LoadJSON(fullPath);
+        return LoadJSON(fullPath, skipBuild);
     }
 }
 
-MapPtr MapLoader::LoadJSON(const std::string& filepath) {
+MapPtr MapLoader::LoadJSON(const std::string& filepath, bool skipBuild) {
     ClearError();
 
     std::ifstream file(filepath);
@@ -219,7 +221,11 @@ MapPtr MapLoader::LoadJSON(const std::string& filepath) {
     std::string content = buffer.str();
     file.close();
 
-    return LoadFromString(content);
+    auto map = LoadFromString(content);
+    if (map && !skipBuild) {
+        BuildMap(*map);
+    }
+    return map;
 }
 
 MapPtr MapLoader::LoadFromString(const std::string& jsonString) {
@@ -272,13 +278,10 @@ MapPtr MapLoader::LoadFromString(const std::string& jsonString) {
              std::to_string(map->GetBrushCount()) + " brushes, " +
              std::to_string(map->GetEntityCount()) + " entities");
 
-    // Build the map (resolve meshes, materials, colliders)
-    BuildMap(*map);
-
     return map;
 }
 
-MapPtr MapLoader::LoadSimple(const std::string& filepath) {
+MapPtr MapLoader::LoadSimple(const std::string& filepath, bool skipBuild) {
     ClearError();
 
     std::ifstream file(filepath);
@@ -343,7 +346,9 @@ MapPtr MapLoader::LoadSimple(const std::string& filepath) {
     LOG_INFO("MapLoader", "Loaded simple map with " + std::to_string(map->GetBrushCount()) + " brushes");
 
     // Build the map
-    BuildMap(*map);
+    if (!skipBuild) {
+        BuildMap(*map);
+    }
 
     return map;
 }
@@ -674,6 +679,128 @@ bool MapLoader::SaveSimple(const Map& map, const std::string& filepath) {
 
     LOG_INFO("MapLoader", "Saved simple map to " + fullPath);
     return true;
+}
+
+MapPtr MapLoader::LoadSAU(const std::string& filepath, bool skipBuild) {
+    ClearError();
+
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        SetError("Failed to open SAU file: " + filepath);
+        return nullptr;
+    }
+
+    auto map = std::make_shared<Map>();
+    std::string line;
+    std::string currentSection;
+    Brush currentBrush;
+    MapEntity currentEntity;
+    bool inBrush = false;
+    bool inEntity = false;
+
+    while (std::getline(file, line)) {
+        line = Trim(line);
+        
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '/' || line[0] == '#') {
+            continue;
+        }
+
+        // Section headers
+        if (line == "metadata {") {
+            currentSection = "metadata";
+            continue;
+        } else if (line == "brush {") {
+            currentSection = "brush";
+            inBrush = true;
+            currentBrush = Brush();
+            currentBrush.flags = BrushFlags::CastShadow | BrushFlags::ReceiveShadow;
+            continue;
+        } else if (line == "entity {") {
+            currentSection = "entity";
+            inEntity = true;
+            currentEntity = MapEntity();
+            continue;
+        } else if (line == "}") {
+            if (inBrush) {
+                map->AddBrush(currentBrush);
+                inBrush = false;
+            } else if (inEntity) {
+                if (!currentEntity.classname.empty()) {
+                    map->AddEntity(currentEntity);
+                }
+                inEntity = false;
+            }
+            currentSection = "";
+            continue;
+        }
+
+        // Parse key = value pairs
+        size_t eqPos = line.find('=');
+        if (eqPos == std::string::npos) continue;
+        
+        std::string key = Trim(line.substr(0, eqPos));
+        std::string value = Trim(line.substr(eqPos + 1));
+        
+        // Remove quotes from value
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
+
+        if (currentSection == "metadata") {
+            if (key == "name") map->GetMetadata().name = value;
+            else if (key == "author") map->GetMetadata().author = value;
+            else if (key == "version") map->GetMetadata().version = value;
+        } else if (inBrush) {
+            if (key == "position") {
+                std::stringstream ss(value);
+                ss >> currentBrush.position.x >> currentBrush.position.y >> currentBrush.position.z;
+            } else if (key == "size") {
+                std::stringstream ss(value);
+                ss >> currentBrush.size.x >> currentBrush.size.y >> currentBrush.size.z;
+            } else if (key == "rotation") {
+                std::stringstream ss(value);
+                ss >> currentBrush.rotation.x >> currentBrush.rotation.y >> currentBrush.rotation.z;
+            } else if (key == "material") {
+                currentBrush.materialName = value;
+            } else if (key == "shape") {
+                currentBrush.shape = StringToBrushShape(value);
+            } else if (key == "flags") {
+                if (value.find("nocollision") != std::string::npos)
+                    currentBrush.flags = currentBrush.flags | BrushFlags::NoCollision;
+                if (value.find("stair") != std::string::npos)
+                    currentBrush.flags = currentBrush.flags | BrushFlags::Stair;
+                if (value.find("detail") != std::string::npos)
+                    currentBrush.flags = currentBrush.flags | BrushFlags::Detail;
+            }
+        } else if (inEntity) {
+            if (key == "classname") {
+                currentEntity.classname = value;
+            } else if (key == "position") {
+                std::stringstream ss(value);
+                ss >> currentEntity.position.x >> currentEntity.position.y >> currentEntity.position.z;
+            } else if (key == "rotation") {
+                std::stringstream ss(value);
+                ss >> currentEntity.rotation.x >> currentEntity.rotation.y >> currentEntity.rotation.z;
+            } else {
+                // Store as custom property
+                currentEntity.properties[key] = value;
+            }
+        }
+    }
+
+    file.close();
+
+    LOG_INFO("MapLoader", "Loaded SAU map '" + map->GetMetadata().name + "' with " +
+             std::to_string(map->GetBrushCount()) + " brushes, " +
+             std::to_string(map->GetEntityCount()) + " entities");
+
+    // Build the map
+    if (!skipBuild) {
+        BuildMap(*map);
+    }
+
+    return map;
 }
 
 void MapLoader::SetError(const std::string& error) {

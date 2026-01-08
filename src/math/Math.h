@@ -82,6 +82,43 @@ struct AABB {
 };
 
 // ============================================================================
+// Ray Structure (for raycasting)
+// ============================================================================
+struct Ray {
+    Vec3 origin;
+    Vec3 direction;  // Should be normalized
+    
+    Ray() : origin(0.0f), direction(0.0f, 0.0f, -1.0f) {}
+    Ray(const Vec3& orig, const Vec3& dir) : origin(orig), direction(glm::normalize(dir)) {}
+    
+    // Get point at distance t along the ray
+    Vec3 GetPoint(float t) const { return origin + direction * t; }
+    
+    // Ray-AABB intersection, returns t or -1 if no hit
+    float IntersectAABB(const AABB& aabb) const {
+        Vec3 invDir = 1.0f / direction;
+        Vec3 t1 = (aabb.min - origin) * invDir;
+        Vec3 t2 = (aabb.max - origin) * invDir;
+        
+        Vec3 tMin = glm::min(t1, t2);
+        Vec3 tMax = glm::max(t1, t2);
+        
+        float tNear = glm::max(glm::max(tMin.x, tMin.y), tMin.z);
+        float tFar = glm::min(glm::min(tMax.x, tMax.y), tMax.z);
+        
+        if (tNear > tFar || tFar < 0) return -1.0f;
+        return tNear > 0 ? tNear : tFar;
+    }
+    
+    // Ray-plane intersection
+    float IntersectPlane(const Vec3& planeNormal, float planeD) const {
+        float denom = glm::dot(planeNormal, direction);
+        if (std::abs(denom) < 0.0001f) return -1.0f;
+        return -(glm::dot(planeNormal, origin) + planeD) / denom;
+    }
+};
+
+// ============================================================================
 // Math Constants
 // ============================================================================
 namespace Math {
