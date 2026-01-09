@@ -13,6 +13,9 @@
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 // Simple line shader (embedded)
 static const char* lineVertexShader = R"(
 #version 330 core
@@ -32,6 +35,46 @@ in vec4 vColor;
 out vec4 FragColor;
 void main() {
     FragColor = vColor;
+}
+)";
+
+// Billboard Sprite Shader
+static const char* spriteVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec2 aOffset;  // Corner offset (-1 to 1)
+layout(location = 1) in vec2 aTexCoord;// UV
+
+uniform mat4 uViewProj;
+uniform vec3 uCameraRight;
+uniform vec3 uCameraUp;
+uniform vec3 uCenter;    // Center world position
+uniform float uSize;
+
+out vec2 vTexCoord;
+
+void main() {
+    vec3 right = uCameraRight * aOffset.x * uSize * 0.5;
+    vec3 up = uCameraUp * aOffset.y * uSize * 0.5;
+    
+    vec3 pos = uCenter + right + up;
+    
+    gl_Position = uViewProj * vec4(pos, 1.0);
+    vTexCoord = aTexCoord;
+}
+)";
+
+static const char* spriteFragmentShader = R"(
+#version 330 core
+in vec2 vTexCoord;
+out vec4 FragColor;
+
+uniform sampler2D uTexture;
+uniform vec4 uTint;
+
+void main() {
+    vec4 texColor = texture(uTexture, vTexCoord);
+    if (texColor.a < 0.1) discard;
+    FragColor = texColor * uTint;
 }
 )";
 
@@ -93,6 +136,119 @@ void Viewport::Initialize(int width, int height) {
     glEnableVertexAttribArray(1);
     
     glBindVertexArray(0);
+    
+    // ========================================================================
+    // Create Sprite Shader
+    // ========================================================================
+    {
+        unsigned int vs = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vs, 1, &spriteVertexShader, nullptr);
+        glCompileShader(vs);
+        
+        unsigned int fs = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fs, 1, &spriteFragmentShader, nullptr);
+        glCompileShader(fs);
+        
+        m_spriteShader = glCreateProgram();
+        glAttachShader(m_spriteShader, vs);
+        glAttachShader(m_spriteShader, fs);
+        glLinkProgram(m_spriteShader);
+        
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+    }
+    
+    // ========================================================================
+    // Create Sprite Quad VAO/VBO
+    // ========================================================================
+    glGenVertexArrays(1, &m_spriteVAO);
+    glGenBuffers(1, &m_spriteVBO);
+    glBindVertexArray(m_spriteVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_spriteVBO);
+    
+    // Quad data: OffsetX, OffsetY, U, V
+    float quadVertices[] = {
+        -1.0f, -1.0f, 0.0f, 1.0f, // BL
+         1.0f, -1.0f, 1.0f, 1.0f, // BR
+         1.0f,  1.0f, 1.0f, 0.0f, // TR
+         
+        -1.0f, -1.0f, 0.0f, 1.0f, // BL
+         1.0f,  1.0f, 1.0f, 0.0f, // TR
+        -1.0f,  1.0f, 0.0f, 0.0f  // TL
+    };
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+    
+    // Attribs
+    // 0: Offset (vec2) - using layout 0
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // 1: TexCoord (vec2) - using layout 1
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    
+    glBindVertexArray(0);
+    
+    // ========================================================================
+    // Generate Procedural Bulb Texture (Fallback)
+    // ========================================================================
+    glGenTextures(1, &m_spriteTexture);
+    glBindTexture(GL_TEXTURE_2D, m_spriteTexture);
+    
+    int size = 64;
+    std::vector<unsigned char> pixels(size * size * 4);
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            float dx = (x - size/2.0f) / (size/2.0f);
+            float dy = (y - size/2.0f) / (size/2.0f);
+            float dist = sqrt(dx*dx + dy*dy);
+            
+            unsigned char r = 255, g = 255, b = 200, a = 0;
+            
+            // Bulb body (circle)
+            if (dist < 0.6f) {
+                a = 255;
+                // Highlight
+                if (dx > -0.2f && dx < 0.2f && dy > -0.2f && dy < 0.2f) {
+                    r = 255; g = 255; b = 255; 
+                }
+            }
+            // Glow/Rays
+            else if (dist < 0.9f) {
+                // Determine angle for rays
+                float angle = atan2(dy, dx);
+                if (sin(angle * 8) > 0.5f) {
+                    a = (unsigned char)(255 * (1.0f - dist) / 0.3f);
+                }
+            }
+            // Socket
+            if (dy > 0.5f && dx > -0.3f && dx < 0.3f) {
+                r = 100; g = 100; b = 100; a = 255;
+            }
+            
+            int idx = (y * size + x) * 4;
+            pixels[idx+0] = r;
+            pixels[idx+1] = g;
+            pixels[idx+2] = b;
+            pixels[idx+3] = a;
+        }
+    }
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size, size, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    // ========================================================================
+    // Attempt to load real bulb.png
+    // ========================================================================
+#ifdef ASSETS_DIR
+    std::string bulbPath = std::string(ASSETS_DIR) + "/bulb.png";
+    unsigned int loadedTex = LoadTexture(bulbPath);
+    if (loadedTex != 0 && loadedTex != m_spriteTexture) {
+        // Success! Replace procedural texture
+        glDeleteTextures(1, &m_spriteTexture);
+        m_spriteTexture = loadedTex;
+    }
+#endif
 }
 
 void Viewport::Resize(int width, int height) {
@@ -291,7 +447,8 @@ void Viewport::RenderBrushes(std::vector<EditorBrush>* brushes, SelectionManager
     for (auto& brush : *brushes) {
         if (!brush.isVisible) continue;
         
-        Genesis::Vec3 min = brush.brush.position;
+        // Use Min/Max accessors - position is CENTER, not corner
+        Genesis::Vec3 min = brush.Min();
         Genesis::Vec3 max = brush.Max();
         
         // Color based on selection state
@@ -328,7 +485,7 @@ void Viewport::RenderEntities(std::vector<EditorEntity>* entities, SelectionMana
         } else {
             switch (entity.visualType) {
                 case EditorEntityType::Light:
-                    color = Genesis::Vec4(1.0f, 0.9f, 0.3f, 1.0f);  // Yellow
+                    color = Genesis::Vec4(1.0f, 1.0f, 1.0f, 1.0f);  // White tint for sprite
                     break;
                 case EditorEntityType::PlayerStart:
                     color = Genesis::Vec4(0.2f, 1.0f, 0.2f, 1.0f);  // Green
@@ -342,31 +499,38 @@ void Viewport::RenderEntities(std::vector<EditorEntity>* entities, SelectionMana
             }
         }
         
-        // Draw a diamond shape for entities
-        DrawLine(pos + Genesis::Vec3(size, 0, 0), pos + Genesis::Vec3(0, size, 0), color);
-        DrawLine(pos + Genesis::Vec3(0, size, 0), pos + Genesis::Vec3(-size, 0, 0), color);
-        DrawLine(pos + Genesis::Vec3(-size, 0, 0), pos + Genesis::Vec3(0, -size, 0), color);
-        DrawLine(pos + Genesis::Vec3(0, -size, 0), pos + Genesis::Vec3(size, 0, 0), color);
-        
-        DrawLine(pos + Genesis::Vec3(0, 0, size), pos + Genesis::Vec3(0, size, 0), color);
-        DrawLine(pos + Genesis::Vec3(0, size, 0), pos + Genesis::Vec3(0, 0, -size), color);
-        DrawLine(pos + Genesis::Vec3(0, 0, -size), pos + Genesis::Vec3(0, -size, 0), color);
-        DrawLine(pos + Genesis::Vec3(0, -size, 0), pos + Genesis::Vec3(0, 0, size), color);
-        
-        // For lights, draw a radius indicator
         if (entity.visualType == EditorEntityType::Light) {
-            float radius = entity.GetLightRadius() / 10.0f;  // Scale down for visibility
-            radius = std::min(radius, 50.0f);
+            // Draw sprite
+            float spriteSize = 24.0f; // Fixed screen size? No, world size.
+            // Adjust size to be reasonable in world units.
+            // 24.0f world units is HUGE. Units are usually meters or inches. Grid is 16-64 units.
+            // Let's us 16 units.
+            DrawBillboardSprite(pos, 16.0f, m_spriteTexture, entity.isSelected ? Genesis::Vec4(1.0f, 0.5f, 0.0f, 1.0f) : Genesis::Vec4(1,1,1,1));
             
-            // Draw a circle in XZ plane
-            int segments = 16;
-            for (int i = 0; i < segments; i++) {
-                float a1 = (float)i / segments * 6.28318f;
-                float a2 = (float)(i + 1) / segments * 6.28318f;
-                Genesis::Vec3 p1 = pos + Genesis::Vec3(cos(a1) * radius, 0, sin(a1) * radius);
-                Genesis::Vec3 p2 = pos + Genesis::Vec3(cos(a2) * radius, 0, sin(a2) * radius);
-                DrawLine(p1, p2, Genesis::Vec4(color.r, color.g, color.b, 0.4f));
+            // Draw rang indicator
+            if (entity.isSelected || entity.visualType == EditorEntityType::Light) { // Always show for lights? maybe too cluttered.
+                 float radius = entity.GetLightRadius();
+                 // Draw circle
+                 int segments = 24;
+                 for (int i = 0; i < segments; i++) {
+                     float a1 = (float)i / segments * 6.28318f;
+                     float a2 = (float)(i + 1) / segments * 6.28318f;
+                     Genesis::Vec3 p1 = pos + Genesis::Vec3(cos(a1) * radius, 0, sin(a1) * radius);
+                     Genesis::Vec3 p2 = pos + Genesis::Vec3(cos(a2) * radius, 0, sin(a2) * radius);
+                     DrawLine(p1, p2, Genesis::Vec4(1.0f, 0.9f, 0.3f, 0.5f));
+                 }
             }
+        } else {
+            // Draw a diamond shape for other entities
+            DrawLine(pos + Genesis::Vec3(size, 0, 0), pos + Genesis::Vec3(0, size, 0), color);
+            DrawLine(pos + Genesis::Vec3(0, size, 0), pos + Genesis::Vec3(-size, 0, 0), color);
+            DrawLine(pos + Genesis::Vec3(-size, 0, 0), pos + Genesis::Vec3(0, -size, 0), color);
+            DrawLine(pos + Genesis::Vec3(0, -size, 0), pos + Genesis::Vec3(size, 0, 0), color);
+            
+            DrawLine(pos + Genesis::Vec3(0, 0, size), pos + Genesis::Vec3(0, size, 0), color);
+            DrawLine(pos + Genesis::Vec3(0, size, 0), pos + Genesis::Vec3(0, 0, -size), color);
+            DrawLine(pos + Genesis::Vec3(0, 0, -size), pos + Genesis::Vec3(0, -size, 0), color);
+            DrawLine(pos + Genesis::Vec3(0, -size, 0), pos + Genesis::Vec3(0, 0, size), color);
         }
     }
 }
@@ -495,7 +659,59 @@ void Viewport::Zoom(float delta) {
         SetupCamera();
     } else {
         m_orbitDistance -= delta * 20.0f;
-        m_orbitDistance = std::max(10.0f, m_orbitDistance);
+        m_orbitDistance = std::clamp(m_orbitDistance, 5.0f, 5000.0f);
+        SetupCamera();
+    }
+}
+
+void Viewport::ZoomAtPoint(float delta, float screenX, float screenY) {
+    if (IsOrthographic()) {
+        // Get world position under cursor BEFORE zoom
+        Genesis::Vec3 worldPosBefore = ScreenToWorld(screenX, screenY, 0.0f);
+        
+        // Apply zoom
+        float oldZoom = m_zoom;
+        m_zoom *= (1.0f + delta * 0.1f);
+        m_zoom = std::clamp(m_zoom, 0.01f, 100.0f);
+        
+        // Get world position under cursor AFTER zoom (with old pan)
+        SetupCamera();
+        Genesis::Vec3 worldPosAfter = ScreenToWorld(screenX, screenY, 0.0f);
+        
+        // Adjust pan to keep cursor over same world point
+        Genesis::Vec3 correction = worldPosBefore - worldPosAfter;
+        
+        switch (m_type) {
+            case ViewportType::TopXZ:
+                m_panOffset.x += correction.x;
+                m_panOffset.y += correction.z;
+                break;
+            case ViewportType::FrontXY:
+                m_panOffset.x += correction.x;
+                m_panOffset.y += correction.y;
+                break;
+            case ViewportType::SideYZ:
+                m_panOffset.x += correction.z;
+                m_panOffset.y += correction.y;
+                break;
+            default:
+                break;
+        }
+        SetupCamera();
+    } else {
+        // 3D perspective: Zoom towards cursor by moving orbit target
+        Genesis::Ray ray = ScreenToWorldRay(screenX, screenY);
+        
+        float zoomAmount = delta * 20.0f;
+        
+        // Move orbit target towards the ray direction
+        Genesis::Vec3 towardsCursor = ray.direction * zoomAmount * 0.3f;
+        m_orbitTarget += towardsCursor;
+        
+        // Also decrease orbit distance
+        m_orbitDistance -= zoomAmount;
+        m_orbitDistance = std::clamp(m_orbitDistance, 5.0f, 5000.0f);
+        
         SetupCamera();
     }
 }
@@ -523,8 +739,6 @@ void Viewport::FocusOn(const Genesis::Vec3& position) {
                 break;
             case ViewportType::SideYZ:
                 m_panOffset = Genesis::Vec2(position.z, position.y);
-                break;
-            default:
                 break;
         }
     }
@@ -563,3 +777,78 @@ Genesis::Vec3 Viewport::ScreenToWorld(float screenX, float screenY, float depth)
     
     return Genesis::Vec3(worldPos);
 }
+
+void Viewport::DrawBillboardSprite(const Genesis::Vec3& pos, float size, unsigned int texture, const Genesis::Vec4& tint) {
+    if (!m_spriteShader) return;
+    
+    glUseProgram(m_spriteShader);
+    
+    Genesis::Mat4 view = m_camera.GetViewMatrix();
+    Genesis::Mat4 viewProj = m_camera.GetViewProjectionMatrix();
+    glUniformMatrix4fv(glGetUniformLocation(m_spriteShader, "uViewProj"), 1, GL_FALSE, &viewProj[0][0]);
+    
+    // Extract camera vectors from View Matrix
+    // View Matrix = [ RightX  RightY  RightZ  -dot(R,P) ]
+    //               [ UpX     UpY     UpZ     -dot(U,P) ]
+    //               [ -FwdX   -FwdY   -FwdZ   dot(F,P)  ]
+    //               [ 0       0       0       1         ]
+    // GLM uses column-major storage, so view[col][row].
+    // Right = (view[0][0], view[1][0], view[2][0])
+    // Up    = (view[0][1], view[1][1], view[2][1])
+    
+    // Actually, simply:
+    Genesis::Vec3 camRight = Genesis::Vec3(view[0][0], view[1][0], view[2][0]);
+    Genesis::Vec3 camUp    = Genesis::Vec3(view[0][1], view[1][1], view[2][1]);
+    
+    // Just to be sure, allow overrides if Perspective check needed, but billboards usually always face camera plane.
+    
+    glUniform3fv(glGetUniformLocation(m_spriteShader, "uCameraRight"), 1, &camRight[0]);
+    glUniform3fv(glGetUniformLocation(m_spriteShader, "uCameraUp"), 1, &camUp[0]);
+    glUniform3fv(glGetUniformLocation(m_spriteShader, "uCenter"), 1, &pos[0]);
+    glUniform1f(glGetUniformLocation(m_spriteShader, "uSize"), size);
+    glUniform4fv(glGetUniformLocation(m_spriteShader, "uTint"), 1, &tint[0]);
+    
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture ? texture : m_spriteTexture);
+    glUniform1i(glGetUniformLocation(m_spriteShader, "uTexture"), 0);
+    
+    glBindVertexArray(m_spriteVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+}
+
+unsigned int Viewport::LoadTexture(const std::string& path) {
+    // Generate texture ID
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    
+    // Load image data
+    int width, height, nrChannels;
+    // stbi_set_flip_vertically_on_load(true); // Maybe? Sprites usually are upright.
+    
+    unsigned char *data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+    if (data) {
+        GLenum format = GL_RGBA;
+        if (nrChannels == 1) format = GL_RED;
+        else if (nrChannels == 3) format = GL_RGB;
+        else if (nrChannels == 4) format = GL_RGBA;
+        
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        
+        // Parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        
+        stbi_image_free(data);
+        return textureID;
+    } else {
+        // Fallback to procedural if load fails
+        if (m_spriteTexture != 0) return m_spriteTexture;
+        return 0; 
+    }
+}
+

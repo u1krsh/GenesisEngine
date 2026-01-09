@@ -16,6 +16,7 @@
 
 #include "EditorBrush.h"
 #include "EditorEntity.h"
+#include "UndoManager.h"
 
 // Forward declarations
 namespace Genesis {
@@ -95,6 +96,13 @@ public:
     bool SaveMap(const std::string& path);
     void BuildMap();
     Genesis::Map* GetCurrentMap() const { return m_currentMap.get(); }
+    
+    // Undo/Redo
+    void SaveUndoState(const std::string& description = "");
+    void Undo();
+    void Redo();
+    bool CanUndo() const { return m_undoManager.CanUndo(); }
+    bool CanRedo() const { return m_undoManager.CanRedo(); }
 
 private:
     // Core systems
@@ -141,10 +149,20 @@ private:
     EditorTool m_currentTool = EditorTool::Select;
     EntityPaletteType m_entityPaletteType = EntityPaletteType::Light;
     
+    // Status message
+    std::string m_statusMessage;
+    float m_statusMessageTime = 0.0f;
+    
+    // Internal helpers
+    void ShowStatusMessage(const std::string& message, float duration = 2.0f);
+    
     // Current map (engine Map for export)
     std::shared_ptr<Genesis::Map> m_currentMap;
     std::string m_currentMapPath;
     bool m_mapModified = false;
+    
+    // Undo/Redo system
+    UndoManager m_undoManager;
     
     // UI state
     bool m_showDemoWindow = false;

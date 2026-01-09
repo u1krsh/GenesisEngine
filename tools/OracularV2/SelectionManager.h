@@ -6,6 +6,7 @@
 // ============================================================================
 
 #include "EditorBrush.h"
+#include "EditorEntity.h" // Changed from Map.h
 #include "map/Map.h"
 #include "math/Math.h"
 #include <vector>
@@ -59,7 +60,7 @@ public:
         m_selectedBrushes.clear();
         
         for (auto* entity : m_selectedEntities) {
-            // TODO: Clear entity selection state
+            entity->isSelected = false; // Now works because we store EditorEntity*
         }
         m_selectedEntities.clear();
     }
@@ -76,12 +77,13 @@ public:
     // Entity selection
     // ========================================================================
     
-    void SelectEntity(Genesis::MapEntity* entity, bool addToSelection = false) {
+    void SelectEntity(EditorEntity* entity, bool addToSelection = false) {
         if (!addToSelection) {
             ClearSelection();
         }
         
-        if (entity) {
+        if (entity && !entity->isSelected) {
+            entity->isSelected = true;
             m_selectedEntities.push_back(entity);
         }
     }
@@ -102,7 +104,7 @@ public:
         return m_selectedBrushes; 
     }
     
-    const std::vector<Genesis::MapEntity*>& GetSelectedEntities() const { 
+    const std::vector<EditorEntity*>& GetSelectedEntities() const { 
         return m_selectedEntities; 
     }
     
@@ -115,7 +117,7 @@ public:
     // ========================================================================
     
     Genesis::AABB GetSelectionBounds() const {
-        if (m_selectedBrushes.empty()) {
+        if (m_selectedBrushes.empty() && m_selectedEntities.empty()) {
             return Genesis::AABB();
         }
         
@@ -126,6 +128,14 @@ public:
             Genesis::AABB bounds = brush->GetAABB();
             min = glm::min(min, bounds.min);
             max = glm::max(max, bounds.max);
+        }
+
+        // Include entities in bounds
+        for (const auto* ent : m_selectedEntities) {
+            float r = 16.0f; // Approximate size
+            Genesis::Vec3 p = ent->entity.position;
+            min = glm::min(min, p - Genesis::Vec3(r));
+            max = glm::max(max, p + Genesis::Vec3(r));
         }
         
         return Genesis::AABB(min, max);
@@ -138,5 +148,5 @@ public:
 
 private:
     std::vector<EditorBrush*> m_selectedBrushes;
-    std::vector<Genesis::MapEntity*> m_selectedEntities;
+    std::vector<EditorEntity*> m_selectedEntities;
 };

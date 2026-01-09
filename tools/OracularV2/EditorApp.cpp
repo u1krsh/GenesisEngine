@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cstring>
+#include <sstream>
 
 // ============================================================================
 // Constructor / Destructor
@@ -81,13 +82,19 @@ bool EditorApp::Initialize(int width, int height, const char* title) {
     m_gizmo = std::make_unique<Gizmo>();
     m_blockTool = std::make_unique<BlockTool>();
 
-    // Try to load the demo map, otherwise create new
-    if (!LoadMap("assets/maps/testmap.json")) {
-        NewMap();
+    // Try to load the demo map - SAU first (editor native), then JSON
+    if (!LoadMap("assets/maps/moody_demo.sau")) {
+        if (!LoadMap("assets/maps/moody_demo.json")) {
+            if (!LoadMap("assets/maps/bsp_demo.json")) {
+                if (!LoadMap("assets/maps/testmap.json")) {
+                    NewMap();
+                }
+            }
+        }
     }
     
-    // Set default save path for editor output
-    m_currentMapPath = "assets/maps/current.sau";
+    // Set default save path for editor output (SAU for editor work)
+    m_currentMapPath = "assets/maps/moody_demo.sau";
 
     m_running = true;
     m_firstFrame = true;
@@ -227,9 +234,15 @@ void EditorApp::Run() {
         ImGuiID dockspaceId = ImGui::GetID("EditorDockspace");
         ImGui::DockSpace(dockspaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
         
-        // Setup initial layout on first frame
+        // Setup initial layout and load default map on first frame
         if (m_firstFrame) {
             SetupDockingLayout();
+#ifdef ASSETS_DIR
+            std::string mapPath = std::string(ASSETS_DIR) + "/maps/moody_demo.sau";
+            LoadMap(mapPath);
+#else
+            LoadMap("assets/maps/moody_demo.sau");
+#endif
             m_firstFrame = false;
         }
         
@@ -290,7 +303,12 @@ void EditorApp::RenderMenuBar() {
             }
             if (ImGui::MenuItem("Open...", "Ctrl+O")) {
                 // Simple hard-coded path for now
-                LoadMap("test.sau");
+#ifdef ASSETS_DIR
+                std::string mapPath = std::string(ASSETS_DIR) + "/maps/moody_demo.sau";
+                LoadMap(mapPath);
+#else
+                LoadMap("assets/maps/moody_demo.sau");
+#endif
             }
             if (ImGui::MenuItem("Save", "Ctrl+S")) {
                 if (m_currentMapPath.empty()) {
@@ -309,11 +327,11 @@ void EditorApp::RenderMenuBar() {
         }
         
         if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Undo", "Ctrl+Z")) {
-                // TODO: Undo
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, CanUndo())) {
+                Undo();
             }
-            if (ImGui::MenuItem("Redo", "Ctrl+Y")) {
-                // TODO: Redo
+            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, CanRedo())) {
+                Redo();
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Delete", "Del")) {
@@ -543,58 +561,101 @@ void EditorApp::RenderPropertiesPanel() {
             ImGui::Text("Entity (%zu selected)", selectedEntities.size());
             ImGui::Separator();
             
-            Genesis::MapEntity* entity = selectedEntities[0];
+            EditorEntity* entity = selectedEntities[0];
             if (entity) {
                 // Classname
                 char classBuf[64];
-                strncpy(classBuf, entity->classname.c_str(), sizeof(classBuf) - 1);
+                strncpy(classBuf, entity->entity.classname.c_str(), sizeof(classBuf) - 1);
                 classBuf[sizeof(classBuf) - 1] = '\0';
                 ImGui::Text("Classname");
                 if (ImGui::InputText("##Classname", classBuf, sizeof(classBuf))) {
-                    entity->classname = classBuf;
+                    entity->entity.classname = classBuf;
+                    entity->SetClassname(classBuf); // Helper to update visual type
                     m_mapModified = true;
                 }
                 
                 // Position
                 ImGui::Text("Position");
-                if (ImGui::DragFloat3("##EntPos", &entity->position.x, m_grid->GetSnapSize())) {
-                    entity->position = m_grid->Snap(entity->position);
+                if (ImGui::DragFloat3("##EntPos", &entity->entity.position.x, m_grid->GetSnapSize())) {
+                    entity->entity.position = m_grid->Snap(entity->entity.position);
                     m_mapModified = true;
                 }
                 
                 // Light-specific properties
-                if (entity->classname == "light") {
+                if (entity->entity.classname == "light") {
                     ImGui::Separator();
                     ImGui::Text("Light Properties");
                     
+                    // Color (Format: "R G B")
                     float color[3] = {1, 1, 1};
-                    auto itR = entity->properties.find("color_r");
-                    auto itG = entity->properties.find("color_g");
-                    auto itB = entity->properties.find("color_b");
-                    if (itR != entity->properties.end()) color[0] = std::stof(itR->second) / 255.0f;
-                    if (itG != entity->properties.end()) color[1] = std::stof(itG->second) / 255.0f;
-                    if (itB != entity->properties.end()) color[2] = std::stof(itB->second) / 255.0f;
+                    auto itColor = entity->entity.properties.find("color");
+                    if (itColor != entity->entity.properties.end()) {
+                        std::istringstream ss(itColor->second);
+                        int r = 255, g = 255, b = 255;
+                        ss >> r >> g >> b;
+                        color[0] = r / 255.0f;
+                        color[1] = g / 255.0f;
+                        color[2] = b / 255.0f;
+                    }
                     
                     if (ImGui::ColorEdit3("Color", color)) {
-                        entity->properties["color_r"] = std::to_string((int)(color[0] * 255));
-                        entity->properties["color_g"] = std::to_string((int)(color[1] * 255));
-                        entity->properties["color_b"] = std::to_string((int)(color[2] * 255));
+                        std::stringstream ss;
+                        ss << (int)(color[0] * 255) << " " << (int)(color[1] * 255) << " " << (int)(color[2] * 255);
+                        entity->entity.properties["color"] = ss.str();
                         m_mapModified = true;
                     }
                     
+                    // Intensity
                     float intensity = 500.0f;
-                    auto itI = entity->properties.find("intensity");
-                    if (itI != entity->properties.end()) intensity = std::stof(itI->second);
-                    if (ImGui::DragFloat("Intensity", &intensity, 10.0f, 0.0f, 5000.0f)) {
-                        entity->properties["intensity"] = std::to_string(intensity);
+                    auto itI = entity->entity.properties.find("intensity");
+                    if (itI != entity->entity.properties.end()) {
+                        try { intensity = std::stof(itI->second); } catch(...) {}
+                    }
+                    if (ImGui::DragFloat("Intensity", &intensity, 10.0f, 0.0f, 10000.0f)) {
+                        entity->entity.properties["intensity"] = std::to_string(intensity);
                         m_mapModified = true;
                     }
                     
+                    // Radius
                     float radius = 200.0f;
-                    auto itRad = entity->properties.find("radius");
-                    if (itRad != entity->properties.end()) radius = std::stof(itRad->second);
-                    if (ImGui::DragFloat("Radius", &radius, 5.0f, 0.0f, 1000.0f)) {
-                        entity->properties["radius"] = std::to_string(radius);
+                    auto itRad = entity->entity.properties.find("radius");
+                    if (itRad != entity->entity.properties.end()) {
+                        try { radius = std::stof(itRad->second); } catch(...) {}
+                    }
+                    if (ImGui::DragFloat("Radius", &radius, 5.0f, 0.0f, 2000.0f)) {
+                        entity->entity.properties["radius"] = std::to_string(radius);
+                        m_mapModified = true;
+                    }
+                    
+                    // Advanced Settings
+                    ImGui::Separator();
+                    ImGui::Text("Advanced Settings");
+
+                    // Falloff
+                    const char* falloffTypes[] = { "Linear", "Quadratic", "Constant" };
+                    int currentFalloff = 0; // Default Linear
+                    auto itFalloff = entity->entity.properties.find("falloff");
+                    if (itFalloff != entity->entity.properties.end()) {
+                        if (itFalloff->second == "quadratic") currentFalloff = 1;
+                        else if (itFalloff->second == "constant") currentFalloff = 2;
+                    }
+                    
+                    if (ImGui::Combo("Falloff", &currentFalloff, falloffTypes, IM_ARRAYSIZE(falloffTypes))) {
+                        if (currentFalloff == 0) entity->entity.properties["falloff"] = "linear";
+                        else if (currentFalloff == 1) entity->entity.properties["falloff"] = "quadratic";
+                        else if (currentFalloff == 2) entity->entity.properties["falloff"] = "constant";
+                        m_mapModified = true;
+                    }
+                    
+                    // Cast Shadows
+                    bool castShadows = true;
+                    auto itShadow = entity->entity.properties.find("cast_shadows");
+                    if (itShadow != entity->entity.properties.end()) {
+                        castShadows = (itShadow->second == "true" || itShadow->second == "1");
+                    }
+                    
+                    if (ImGui::Checkbox("Cast Shadows", &castShadows)) {
+                        entity->entity.properties["cast_shadows"] = castShadows ? "true" : "false";
                         m_mapModified = true;
                     }
                 }
@@ -602,9 +663,12 @@ void EditorApp::RenderPropertiesPanel() {
                 // Generic key-value properties
                 ImGui::Separator();
                 ImGui::Text("Custom Properties");
-                for (auto& [key, value] : entity->properties) {
-                    if (key == "color_r" || key == "color_g" || key == "color_b" || 
-                        key == "intensity" || key == "radius") continue;
+                for (auto& [key, value] : entity->entity.properties) {
+                    // Skip properties that have dedicated UI controls
+                    if (entity->entity.classname == "light") {
+                        if (key == "color" || key == "intensity" || key == "radius" || 
+                            key == "falloff" || key == "cast_shadows") continue;
+                    }
                     
                     char valBuf[256];
                     strncpy(valBuf, value.c_str(), sizeof(valBuf) - 1);
@@ -685,6 +749,18 @@ void EditorApp::RenderStatusBar() {
     }
     
     ImGui::SameLine(550);
+    
+    // Status Message Overlay (Red, disappearing)
+    if (m_statusMessageTime > 0.0f) {
+        m_statusMessageTime -= ImGui::GetIO().DeltaTime;
+        
+        // Draw directly on screen (Bottom Left area, above status bar)
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
+        ImVec2 pos(20.0f, viewport->WorkPos.y + viewport->WorkSize.y - 60.0f);
+        drawList->AddText(ImGui::GetFont(), 24.0f, pos, IM_COL32(255, 0, 0, 255), m_statusMessage.c_str());
+    }
+
+
     
     // Modified indicator
     if (m_mapModified) {
@@ -799,10 +875,38 @@ void EditorApp::ProcessInput() {
     if (glfwGetKey(m_window, GLFW_KEY_S) == GLFW_PRESS && 
         (glfwGetKey(m_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || 
          glfwGetKey(m_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) && !keySave) {
-        if (m_currentMapPath.empty()) m_currentMapPath = "test.sau";
+        if (m_currentMapPath.empty()) {
+#ifdef ASSETS_DIR
+            m_currentMapPath = std::string(ASSETS_DIR) + "/maps/moody_demo.sau";
+#else
+            m_currentMapPath = "assets/maps/current.json";
+#endif
+        }
         SaveMap(m_currentMapPath);
         keySave = true;
     } else if (glfwGetKey(m_window, GLFW_KEY_S) == GLFW_RELEASE) keySave = false;
+    
+    // Undo shortcut (Ctrl+Z)
+    static bool keyUndo = false;
+    if (glfwGetKey(m_window, GLFW_KEY_Z) == GLFW_PRESS && 
+        (glfwGetKey(m_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || 
+         glfwGetKey(m_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) && !keyUndo) {
+        Undo();
+        keyUndo = true;
+    } else if (glfwGetKey(m_window, GLFW_KEY_Z) == GLFW_RELEASE) keyUndo = false;
+    
+    // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z)
+    static bool keyRedo = false;
+    if (((glfwGetKey(m_window, GLFW_KEY_Y) == GLFW_PRESS) ||
+         (glfwGetKey(m_window, GLFW_KEY_Z) == GLFW_PRESS && 
+          (glfwGetKey(m_window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || 
+           glfwGetKey(m_window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS))) &&
+        (glfwGetKey(m_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || 
+         glfwGetKey(m_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) && !keyRedo) {
+        Redo();
+        keyRedo = true;
+    } else if (glfwGetKey(m_window, GLFW_KEY_Y) == GLFW_RELEASE && 
+               glfwGetKey(m_window, GLFW_KEY_Z) == GLFW_RELEASE) keyRedo = false;
 }
 
 // ============================================================================
@@ -810,6 +914,7 @@ void EditorApp::ProcessInput() {
 // ============================================================================
 
 void EditorApp::AddEditorBrush(const EditorBrush& brush) {
+    SaveUndoState("Add Brush");
     EditorBrush newBrush = brush;
     newBrush.editorId = m_nextBrushId++;
     m_editorBrushes.push_back(newBrush);
@@ -821,6 +926,7 @@ void EditorApp::AddEditorBrush(const EditorBrush& brush) {
 void EditorApp::DeleteSelectedBrushes() {
     if (!m_selection || m_selection->GetSelectedBrushes().empty()) return;
     
+    SaveUndoState("Delete Brushes");
     auto selected = m_selection->GetSelectedBrushes();
     
     for (auto* brush : selected) {
@@ -841,6 +947,7 @@ void EditorApp::DeleteSelectedBrushes() {
 // ============================================================================
 
 void EditorApp::AddEditorEntity(const EditorEntity& entity) {
+    SaveUndoState("Add Entity");
     EditorEntity newEntity = entity;
     newEntity.editorId = m_nextEntityId++;
     m_editorEntities.push_back(newEntity);
@@ -852,10 +959,28 @@ void EditorApp::AddEditorEntity(const EditorEntity& entity) {
 void EditorApp::DeleteSelectedEntities() {
     if (!m_selection || m_selection->GetSelectedEntities().empty()) return;
     
-    // For now, clear entity selection
-    // TODO: Implement proper entity deletion
+    SaveUndoState("Delete Entity");
+    
+    // Copy the list of selected entities to delete (because clearing selection clears the original list)
+    std::vector<uint32_t> idsToDelete;
+    for (auto* ent : m_selection->GetSelectedEntities()) {
+        if (ent) idsToDelete.push_back(ent->editorId);
+    }
+    
+    // Clear selection first to avoiding dangling pointers in SelectionManager
     m_selection->ClearSelection();
+    
+    // Remove from main list
+    m_editorEntities.erase(
+        std::remove_if(m_editorEntities.begin(), m_editorEntities.end(),
+            [&](const EditorEntity& ent) {
+                return std::find(idsToDelete.begin(), idsToDelete.end(), ent.editorId) != idsToDelete.end();
+            }),
+        m_editorEntities.end()
+    );
+    
     m_mapModified = true;
+    m_buildLog += "Deleted " + std::to_string(idsToDelete.size()) + " entities\n";
 }
 
 // ============================================================================
@@ -941,15 +1066,32 @@ bool EditorApp::SaveMap(const std::string& path) {
         m_currentMap->AddEntity(ee.entity);
     }
     
-    if (SAU::Save(*m_currentMap, path)) {
-        m_currentMapPath = path;
-        m_mapModified = false;
-        m_buildLog += "Saved map: " + path + "\n";
-        return true;
+    // Detect format by file extension
+    bool success = false;
+    size_t dotPos = path.rfind('.');
+    std::string ext = (dotPos != std::string::npos) ? path.substr(dotPos) : "";
+    
+    if (ext == ".json") {
+        // Save as JSON (game compatible)
+        auto& loader = Genesis::MapLoader::Instance();
+        loader.SetBasePath("");  // Use absolute paths
+        success = loader.SaveJSON(*m_currentMap, path);
+    } else {
+        // Default (SAU or others)
+        success = SAU::Save(*m_currentMap, path);
     }
     
-    m_buildLog += "Failed to save: " + path + "\n";
-    return false;
+    if (success) {
+        m_currentMapPath = path;
+        m_mapModified = false;
+        m_buildLog += "Saved map to: " + path + "\n";
+        ShowStatusMessage("Map Saved");
+    } else {
+        m_buildLog += "Failed to save: " + path + "\n";
+        ShowStatusMessage("Save Failed!");
+    }
+    
+    return success;
 }
 
 // ============================================================================
@@ -994,4 +1136,37 @@ void EditorApp::BuildMap() {
     }
     
     m_buildLog += "========================================\n";
+}
+
+// ============================================================================
+// Undo/Redo
+// ============================================================================
+
+void EditorApp::SaveUndoState(const std::string& description) {
+    m_undoManager.PushState(m_editorBrushes, m_editorEntities, description);
+}
+
+void EditorApp::Undo() {
+    if (m_undoManager.Undo(m_editorBrushes, m_editorEntities)) {
+        if (m_selection) {
+            m_selection->ClearSelection();
+        }
+        m_mapModified = true;
+        m_buildLog += "Undo\n";
+    }
+}
+
+void EditorApp::Redo() {
+    if (m_undoManager.Redo(m_editorBrushes, m_editorEntities)) {
+        if (m_selection) {
+            m_selection->ClearSelection();
+        }
+        m_mapModified = true;
+        m_buildLog += "Redo\n";
+    }
+}
+
+void EditorApp::ShowStatusMessage(const std::string& message, float duration) {
+    m_statusMessage = message;
+    m_statusMessageTime = duration;
 }

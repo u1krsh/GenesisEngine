@@ -68,7 +68,7 @@ static Genesis::Vec3 ParseVec3(const std::vector<std::string>& tokens, size_t st
 }
 
 // ============================================================================
-// Load
+// Load - Uses same format as MapLoader::LoadSAU for compatibility
 // ============================================================================
 
 std::unique_ptr<Genesis::Map> Load(const std::string& path) {
@@ -80,95 +80,97 @@ std::unique_ptr<Genesis::Map> Load(const std::string& path) {
     
     auto map = std::make_unique<Genesis::Map>();
     std::string line;
-    
-    enum class ParseState { None, Map, Brush, Entity };
-    ParseState state = ParseState::None;
-    
+    std::string currentSection;
     Genesis::Brush currentBrush;
     Genesis::MapEntity currentEntity;
-    int braceDepth = 0;
+    bool inBrush = false;
+    bool inEntity = false;
     
     while (std::getline(file, line)) {
         line = Trim(line);
         
         // Skip empty lines and comments
-        if (line.empty() || line[0] == '#' || line.substr(0, 2) == "//") {
+        if (line.empty() || line[0] == '#' || line[0] == '/') {
             continue;
         }
         
-        auto tokens = SplitLine(line);
-        if (tokens.empty()) continue;
-        
-        // Block start
-        if (tokens[0] == "map") {
-            state = ParseState::Map;
+        // Section headers (with { on same line)
+        if (line == "metadata {") {
+            currentSection = "metadata";
             continue;
-        } else if (tokens[0] == "brush") {
-            state = ParseState::Brush;
+        } else if (line == "brush {") {
+            currentSection = "brush";
+            inBrush = true;
             currentBrush = Genesis::Brush();
+            currentBrush.flags = Genesis::BrushFlags::CastShadow | Genesis::BrushFlags::ReceiveShadow;
             continue;
-        } else if (tokens[0] == "entity" && tokens.size() > 1) {
-            state = ParseState::Entity;
+        } else if (line == "entity {") {
+            currentSection = "entity";
+            inEntity = true;
             currentEntity = Genesis::MapEntity();
-            currentEntity.classname = RemoveQuotes(tokens[1]);
             continue;
-        }
-        
-        // Block braces
-        if (tokens[0] == "{") {
-            braceDepth++;
-            continue;
-        } else if (tokens[0] == "}") {
-            braceDepth--;
-            if (braceDepth == 0) {
-                if (state == ParseState::Brush) {
-                    map->AddBrush(currentBrush);
-                } else if (state == ParseState::Entity) {
+        } else if (line == "}") {
+            if (inBrush) {
+                map->AddBrush(currentBrush);
+                inBrush = false;
+            } else if (inEntity) {
+                if (!currentEntity.classname.empty()) {
                     map->AddEntity(currentEntity);
                 }
-                state = ParseState::None;
+                inEntity = false;
             }
+            currentSection = "";
             continue;
         }
         
-        // Parse properties based on state
-        if (state == ParseState::Map) {
-            auto& meta = map->GetMetadata();
-            if (tokens[0] == "name" && tokens.size() > 1) {
-                meta.name = RemoveQuotes(tokens[1]);
-            } else if (tokens[0] == "author" && tokens.size() > 1) {
-                meta.author = RemoveQuotes(tokens[1]);
-            } else if (tokens[0] == "spawn_position" && tokens.size() > 3) {
-                meta.spawnPosition = ParseVec3(tokens, 1);
+        // Parse key = value pairs
+        size_t eqPos = line.find('=');
+        if (eqPos == std::string::npos) continue;
+        
+        std::string key = Trim(line.substr(0, eqPos));
+        std::string value = Trim(line.substr(eqPos + 1));
+        
+        // Remove quotes from value
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
+        
+        if (currentSection == "metadata") {
+            if (key == "name") map->GetMetadata().name = value;
+            else if (key == "author") map->GetMetadata().author = value;
+            else if (key == "version") map->GetMetadata().version = value;
+        } else if (inBrush) {
+            if (key == "position") {
+                std::istringstream ss(value);
+                ss >> currentBrush.position.x >> currentBrush.position.y >> currentBrush.position.z;
+            } else if (key == "size") {
+                std::istringstream ss(value);
+                ss >> currentBrush.size.x >> currentBrush.size.y >> currentBrush.size.z;
+            } else if (key == "rotation") {
+                std::istringstream ss(value);
+                ss >> currentBrush.rotation.x >> currentBrush.rotation.y >> currentBrush.rotation.z;
+            } else if (key == "material") {
+                currentBrush.materialName = value;
+            } else if (key == "shape") {
+                currentBrush.shape = Genesis::StringToBrushShape(value);
+            } else if (key == "flags") {
+                if (value.find("nocollision") != std::string::npos)
+                    currentBrush.flags = currentBrush.flags | Genesis::BrushFlags::NoCollision;
+                if (value.find("stair") != std::string::npos)
+                    currentBrush.flags = currentBrush.flags | Genesis::BrushFlags::Stair;
             }
-        } else if (state == ParseState::Brush) {
-            if (tokens[0] == "min" && tokens.size() > 3) {
-                currentBrush.position = ParseVec3(tokens, 1);
-            } else if (tokens[0] == "max" && tokens.size() > 3) {
-                Genesis::Vec3 maxPos = ParseVec3(tokens, 1);
-                currentBrush.size = maxPos - currentBrush.position;
-            } else if (tokens[0] == "material" && tokens.size() > 1) {
-                currentBrush.materialName = RemoveQuotes(tokens[1]);
-            } else if (tokens[0] == "flags") {
-                currentBrush.flags = Genesis::BrushFlags::None;
-                for (size_t i = 1; i < tokens.size(); i++) {
-                    if (tokens[i] == "noCollision") {
-                        currentBrush.flags = currentBrush.flags | Genesis::BrushFlags::NoCollision;
-                    } else if (tokens[i] == "castShadow") {
-                        currentBrush.flags = currentBrush.flags | Genesis::BrushFlags::CastShadow;
-                    } else if (tokens[i] == "receiveShadow") {
-                        currentBrush.flags = currentBrush.flags | Genesis::BrushFlags::ReceiveShadow;
-                    }
-                }
-            }
-        } else if (state == ParseState::Entity) {
-            if (tokens[0] == "position" && tokens.size() > 3) {
-                currentEntity.position = ParseVec3(tokens, 1);
-            } else if (tokens[0] == "rotation" && tokens.size() > 3) {
-                currentEntity.rotation = ParseVec3(tokens, 1);
-            } else if (tokens.size() > 1) {
-                // Generic key-value property
-                currentEntity.properties[tokens[0]] = RemoveQuotes(tokens[1]);
+        } else if (inEntity) {
+            if (key == "classname") {
+                currentEntity.classname = value;
+            } else if (key == "position") {
+                std::istringstream ss(value);
+                ss >> currentEntity.position.x >> currentEntity.position.y >> currentEntity.position.z;
+            } else if (key == "rotation") {
+                std::istringstream ss(value);
+                ss >> currentEntity.rotation.x >> currentEntity.rotation.y >> currentEntity.rotation.z;
+            } else {
+                // Store as custom property
+                currentEntity.properties[key] = value;
             }
         }
     }
@@ -181,7 +183,7 @@ std::unique_ptr<Genesis::Map> Load(const std::string& path) {
 }
 
 // ============================================================================
-// Save
+// Save - Uses same format as MapLoader::LoadSAU for compatibility
 // ============================================================================
 
 bool Save(const Genesis::Map& map, const std::string& path) {
@@ -197,30 +199,30 @@ bool Save(const Genesis::Map& map, const std::string& path) {
     file << "# OracularV2 Map File\n";
     file << "# Format: SAU v1.0\n\n";
     
-    // Map block
-    file << "map\n{\n";
-    file << "    name \"" << meta.name << "\"\n";
-    file << "    author \"" << meta.author << "\"\n";
-    file << "    spawn_position " << meta.spawnPosition.x << " " 
-         << meta.spawnPosition.y << " " << meta.spawnPosition.z << "\n";
+    // Metadata block
+    file << "metadata {\n";
+    file << "    name = \"" << meta.name << "\"\n";
+    file << "    author = \"" << meta.author << "\"\n";
+    file << "    version = \"" << meta.version << "\"\n";
     file << "}\n\n";
     
     // Brushes
     for (const auto& brush : map.GetBrushes()) {
-        Genesis::Vec3 maxPos = brush.position + brush.size;
-        
-        file << "brush\n{\n";
-        file << "    min " << brush.position.x << " " << brush.position.y << " " << brush.position.z << "\n";
-        file << "    max " << maxPos.x << " " << maxPos.y << " " << maxPos.z << "\n";
-        file << "    material " << brush.materialName << "\n";
+        file << "brush {\n";
+        file << "    position = " << brush.position.x << " " << brush.position.y << " " << brush.position.z << "\n";
+        file << "    size = " << brush.size.x << " " << brush.size.y << " " << brush.size.z << "\n";
+        if (brush.rotation != Genesis::Vec3(0.0f)) {
+            file << "    rotation = " << brush.rotation.x << " " << brush.rotation.y << " " << brush.rotation.z << "\n";
+        }
+        file << "    shape = " << Genesis::BrushShapeToString(brush.shape) << "\n";
+        file << "    material = " << brush.materialName << "\n";
         
         // Flags
         std::string flags;
-        if (Genesis::HasFlag(brush.flags, Genesis::BrushFlags::NoCollision)) flags += "noCollision ";
-        if (Genesis::HasFlag(brush.flags, Genesis::BrushFlags::CastShadow)) flags += "castShadow ";
-        if (Genesis::HasFlag(brush.flags, Genesis::BrushFlags::ReceiveShadow)) flags += "receiveShadow ";
+        if (Genesis::HasFlag(brush.flags, Genesis::BrushFlags::NoCollision)) flags += "nocollision ";
+        if (Genesis::HasFlag(brush.flags, Genesis::BrushFlags::Stair)) flags += "stair ";
         if (!flags.empty()) {
-            file << "    flags " << flags << "\n";
+            file << "    flags = " << flags << "\n";
         }
         
         file << "}\n\n";
@@ -228,17 +230,18 @@ bool Save(const Genesis::Map& map, const std::string& path) {
     
     // Entities
     for (const auto& entity : map.GetEntities()) {
-        file << "entity " << entity.classname << "\n{\n";
-        file << "    position " << entity.position.x << " " << entity.position.y << " " << entity.position.z << "\n";
+        file << "entity {\n";
+        file << "    classname = " << entity.classname << "\n";
+        file << "    position = " << entity.position.x << " " << entity.position.y << " " << entity.position.z << "\n";
         
         if (entity.rotation != Genesis::Vec3(0.0f)) {
-            file << "    rotation " << entity.rotation.x << " " << entity.rotation.y << " " << entity.rotation.z << "\n";
+            file << "    rotation = " << entity.rotation.x << " " << entity.rotation.y << " " << entity.rotation.z << "\n";
         }
         
         // Custom properties
         for (const auto& [key, value] : entity.properties) {
-            if (key != "position" && key != "rotation") {
-                file << "    " << key << " \"" << value << "\"\n";
+            if (key != "classname" && key != "position" && key != "rotation") {
+                file << "    " << key << " = \"" << value << "\"\n";
             }
         }
         

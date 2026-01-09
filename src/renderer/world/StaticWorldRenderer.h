@@ -231,6 +231,18 @@ public:
     void SetDirectionalLight(const Vec3& direction, const Vec3& color, float intensity = 1.0f);
     void SetAmbientLight(const Vec3& color, float intensity = 1.0f);
 
+    struct PointLight {
+        Vec3 position;
+        Vec3 color;
+        float intensity;
+        float radius;
+    };
+
+    void AddPointLight(const Vec3& position, const Vec3& color, float intensity, float radius);
+    void ClearLights();
+    
+    const std::vector<PointLight>& GetPointLights() const { return m_pointLights; }
+
     // ========================================================================
     // Statistics
     // ========================================================================
@@ -300,6 +312,9 @@ private:
     float m_lightIntensity = 1.0f;
     Vec3 m_ambientColor = Vec3(0.15f, 0.15f, 0.2f);
     float m_ambientIntensity = 1.0f;
+    
+    std::vector<PointLight> m_pointLights;
+    const int MAX_POINT_LIGHTS = 16; // usage in shader
 
     // Layer visibility
     std::unordered_map<uint32_t, bool> m_layerVisibility;

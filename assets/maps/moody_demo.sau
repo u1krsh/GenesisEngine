@@ -1,0 +1,131 @@
+# OracularV2 Map File
+# Format: SAU v1.0
+
+metadata {
+    name = "Moody Dungeon"
+    author = "Utkarsh"
+    version = "1.0"
+}
+
+brush {
+    position = 0 -2 0
+    size = 64 4 64
+    shape = cube
+    material = stone
+}
+
+brush {
+    position = 0 20 0
+    size = 64 4 64
+    shape = cube
+    material = ceiling
+}
+
+brush {
+    position = -34 10 0
+    size = 4 24 64
+    shape = cube
+    material = brick
+}
+
+brush {
+    position = 34 10 0
+    size = 4 24 64
+    shape = cube
+    material = brick
+}
+
+brush {
+    position = 0 10 -34
+    size = 64 24 4
+    shape = cube
+    material = brick
+}
+
+brush {
+    position = 0 10 34
+    size = 64 24 4
+    shape = cube
+    material = brick
+}
+
+brush {
+    position = -15 5 -15
+    size = 4 10 4
+    shape = cube
+    material = metal
+}
+
+brush {
+    position = 15 5 15
+    size = 4 10 4
+    shape = cube
+    material = metal
+}
+
+brush {
+    position = 15 5 -15
+    size = 4 10 4
+    shape = cube
+    material = metal
+}
+
+brush {
+    position = -15 5 15
+    size = 4 10 4
+    shape = cube
+    material = metal
+}
+
+brush {
+    position = 0 2 0
+    size = 8 4 8
+    shape = cube
+    material = wood
+}
+
+entity {
+    classname = info_player_start
+    position = 0 5 0
+}
+
+entity {
+    classname = light
+    position = 10.8149 6.81534 -13.0354
+    radius = "40"
+    intensity = "2700.000000"
+    color = "255 0 0"
+}
+
+entity {
+    classname = light
+    position = -9.12087 1.61588 -11.4458
+    radius = "30"
+    intensity = "290.000000"
+    color = "150 150 255"
+}
+
+entity {
+    classname = light
+    position = -0.563374 23.8783 0.118052
+    radius = "30"
+    intensity = "150.000000"
+    color = "255 0 0"
+}
+
+entity {
+    classname = light
+    position = -8.30843 6.74611 9.14075
+    radius = "30"
+    intensity = "260.000000"
+    color = "150 255 150"
+}
+
+entity {
+    classname = light
+    position = 11.75 6.8959 9.49994
+    radius = "30"
+    intensity = "110.000000"
+    color = "52 0 255"
+}
+

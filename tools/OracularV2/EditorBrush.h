@@ -36,27 +36,30 @@ struct EditorBrush {
     
     // ========================================================================
     // Convenience accessors
+    // NOTE: brush.position is the CENTER of the brush
+    //       brush.size is the FULL dimensions
     // ========================================================================
     
-    Genesis::Vec3& Min() { 
-        return brush.position; 
+    Genesis::Vec3 Min() const { 
+        return brush.position - brush.size * 0.5f; 
     }
     
     Genesis::Vec3 Max() const { 
-        return brush.position + brush.size; 
+        return brush.position + brush.size * 0.5f; 
     }
     
     void SetBounds(const Genesis::Vec3& min, const Genesis::Vec3& max) {
-        brush.position = min;
         brush.size = max - min;
+        brush.position = min + brush.size * 0.5f;  // Center position
     }
     
     Genesis::Vec3 GetCenter() const {
-        return brush.position + brush.size * 0.5f;
+        return brush.position;  // Position IS the center
     }
     
     Genesis::AABB GetAABB() const {
-        return Genesis::AABB(brush.position, brush.position + brush.size);
+        Genesis::Vec3 halfSize = brush.size * 0.5f;
+        return Genesis::AABB(brush.position - halfSize, brush.position + halfSize);
     }
     
     // ========================================================================
@@ -68,8 +71,8 @@ struct EditorBrush {
                                   const std::string& material = "default") {
         EditorBrush eb;
         eb.brush.shape = Genesis::BrushShape::Cube;
-        eb.brush.position = min;
         eb.brush.size = max - min;
+        eb.brush.position = min + eb.brush.size * 0.5f;  // Center position
         eb.brush.materialName = material;
         eb.brush.flags = Genesis::BrushFlags::CastShadow | 
                          Genesis::BrushFlags::ReceiveShadow;

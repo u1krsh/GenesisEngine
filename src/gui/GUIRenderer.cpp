@@ -299,6 +299,10 @@ void GUIRenderer::CreateFontTexture() {
 
     glGenTextures(1, &m_fontTexture);
     glBindTexture(GL_TEXTURE_2D, m_fontTexture);
+    
+    // Set unpack alignment to 1 byte (since we use GL_RED/unsigned char)
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, FONT_TEXTURE_SIZE, FONT_TEXTURE_SIZE, 0, GL_RED, GL_UNSIGNED_BYTE, textureData.data());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);

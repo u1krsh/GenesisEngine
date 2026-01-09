@@ -195,16 +195,29 @@ MapPtr MapLoader::Load(const std::string& filepath, bool skipBuild) {
     std::string ext = (dotPos != std::string::npos) ? filepath.substr(dotPos) : "";
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
+    std::cout << "Loaded map: " << filepath << std::endl;
+    MapPtr map = nullptr;
     if (ext == ".json") {
-        return LoadJSON(fullPath, skipBuild);
+        map = LoadJSON(fullPath, skipBuild);
     } else if (ext == ".sau") {
-        return LoadSAU(fullPath, skipBuild);
+        map = LoadSAU(fullPath, skipBuild);
     } else if (ext == ".map" || ext == ".txt") {
-        return LoadSimple(fullPath, skipBuild);
+        map = LoadSimple(fullPath, skipBuild);
     } else {
         // Default to JSON
-        return LoadJSON(fullPath, skipBuild);
+        map = LoadJSON(fullPath, skipBuild);
     }
+
+    if (map) {
+        // If map has no name (or default Untitled), set it to the filename
+        if (map->GetName() == "Untitled" || map->GetName().empty()) {
+            size_t lastSlash = filepath.find_last_of("/\\");
+            std::string filename = (lastSlash != std::string::npos) ? filepath.substr(lastSlash + 1) : filepath;
+            map->SetName(filename);
+        }
+    }
+
+    return map;
 }
 
 MapPtr MapLoader::LoadJSON(const std::string& filepath, bool skipBuild) {

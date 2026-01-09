@@ -64,6 +64,7 @@ public:
     // Camera control
     void Pan(float dx, float dy);
     void Zoom(float delta);
+    void ZoomAtPoint(float delta, float screenX, float screenY);  // Zoom towards cursor
     void Orbit(float dx, float dy);  // Only for 3D viewport
     void MoveOrbitTarget(const Genesis::Vec3& delta) {
         m_orbitTarget += delta;
@@ -113,6 +114,9 @@ private:
                  const Genesis::Vec4& color, bool filled = false);
     void DrawAxisGizmo(const Genesis::Vec3& pos, float size);
     
+    // Sprite rendering helpers
+    void DrawBillboardSprite(const Genesis::Vec3& pos, float size, unsigned int texture, const Genesis::Vec4& tint);
+    unsigned int LoadTexture(const std::string& path);
 
 
 private:
@@ -140,4 +144,10 @@ private:
     unsigned int m_lineVAO = 0;
     unsigned int m_lineVBO = 0;
     unsigned int m_lineShader = 0;
+    
+    // Sprite rendering
+    unsigned int m_spriteVAO = 0;
+    unsigned int m_spriteVBO = 0;
+    unsigned int m_spriteShader = 0;
+    unsigned int m_spriteTexture = 0;
 };

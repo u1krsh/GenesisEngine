@@ -427,6 +427,26 @@ void StaticWorldRenderer::UploadGlobalUniforms(Shader& shader, const FPSCamera& 
     if (shader.HasUniform("u_AmbientColor")) {
         shader.SetVec3("u_AmbientColor", m_ambientColor * m_ambientIntensity);
     }
+    
+    // Upload Point Lights
+    if (shader.HasUniform("u_NumPointLights")) {
+        shader.SetInt("u_NumPointLights", static_cast<int>(m_pointLights.size()));
+    }
+    
+    for (size_t i = 0; i < m_pointLights.size(); i++) {
+        std::string base = "u_PointLights[" + std::to_string(i) + "]";
+        // Only set if array base exists (optimization: check first element or assume shader compile matches)
+        // We check specific fields for safety
+         if (shader.HasUniform(base + ".position")) {
+            shader.SetVec3(base + ".position", m_pointLights[i].position);
+            shader.SetVec3(base + ".color", m_pointLights[i].color * m_pointLights[i].intensity);
+            shader.SetFloat(base + ".radius", m_pointLights[i].radius);
+            shader.SetFloat(base + ".constant", 1.0f);
+            // Attenuation approximation based on radius
+            shader.SetFloat(base + ".linear", 4.5f / m_pointLights[i].radius); 
+            shader.SetFloat(base + ".quadratic", 75.0f / (m_pointLights[i].radius * m_pointLights[i].radius));
+        }
+    }
 }
 
 // ============================================================================
@@ -490,6 +510,16 @@ void StaticWorldRenderer::SetDirectionalLight(const Vec3& direction, const Vec3&
 void StaticWorldRenderer::SetAmbientLight(const Vec3& color, float intensity) {
     m_ambientColor = color;
     m_ambientIntensity = intensity;
+}
+
+void StaticWorldRenderer::AddPointLight(const Vec3& position, const Vec3& color, float intensity, float radius) {
+    if (m_pointLights.size() < MAX_POINT_LIGHTS) {
+        m_pointLights.push_back({position, color, intensity, radius});
+    }
+}
+
+void StaticWorldRenderer::ClearLights() {
+    m_pointLights.clear();
 }
 
 // ============================================================================

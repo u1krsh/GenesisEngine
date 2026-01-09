@@ -126,4 +126,27 @@ private:
     void UpdateTransform(const Genesis::Vec2& currentMouse, Viewport* viewport);
     void ApplyTransform();
     void CancelTransform();
+    
+    // ------------------------------------------------------------------------
+    // Box Selection State
+    // ------------------------------------------------------------------------
+    struct BoxSelectState {
+        bool active = false;
+        Genesis::Vec2 startPos{0.0f};
+        Genesis::Vec2 endPos{0.0f};
+        int viewportIndex = -1;
+    } m_boxSelect;
+    
+    void RenderBoxSelectOverlay();
+    
+    // ------------------------------------------------------------------------
+    // Click-through selection (cycle through overlapping objects)
+    // ------------------------------------------------------------------------
+    struct ClickThroughState {
+        Genesis::Vec2 lastClickPos{0.0f};
+        int viewportIndex = -1;
+        int cycleIndex = 0;  // Which object in the stack to select
+        float clickTimeout = 0.3f;  // Max time between clicks to cycle
+        double lastClickTime = 0.0;
+    } m_clickThrough;
 };

@@ -72,7 +72,7 @@ namespace Colors {
     const Vec4 ConsoleOutput    = Vec4(0.78f, 0.74f, 0.88f, 1.0f);    // Console text
     const Vec4 ConsoleError     = Vec4(0.95f, 0.35f, 0.40f, 1.0f);    // Error text (red)
     const Vec4 ConsoleWarning   = Vec4(0.95f, 0.82f, 0.35f, 1.0f);    // Warning text
-    const Vec4 ConsoleSuccess   = Vec4(0.40f, 0.90f, 0.50f, 1.0f);    // Success text
+    const Vec4 ConsoleSuccess   = Vec4(0.0f, 1.0f, 0.8f, 1.0f);       // Cyan-Green Success text
     const Vec4 ConsoleCommand   = Vec4(0.55f, 0.78f, 1.0f, 1.0f);     // Command echo
 
     // Panel/Window specific

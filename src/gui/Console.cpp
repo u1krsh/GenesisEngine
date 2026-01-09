@@ -430,6 +430,7 @@ void Console::Toggle() {
 
 void Console::Open() {
     m_isOpen = true;
+    m_openAmount = m_targetOpenAmount; // Jump to target immediately
     m_cursorBlinkTimer = 0.0f;
     m_cursorVisible = true;
 }

@@ -84,6 +84,38 @@ void MapRenderer::SyncRendering() {
         }
     }
 
+    // SCENE LIGHTS
+    worldRender.ClearLights(); // Ensure we don't duplicate lights on reload
+    for (const auto& entity : m_activeMap->GetEntities()) {
+        if (entity.classname == "light") {
+            Vec3 color(1.0f);
+            float intensity = 100.0f;
+            float radius = 10.0f;
+
+            // Parse Properties
+            if (entity.properties.count("color")) {
+                std::istringstream ss(entity.properties.at("color"));
+                float r, g, b;
+                if (ss >> r >> g >> b) {
+                     // SAU stores 0-255, Renderer expects 0-1
+                     if (r > 1.0f || g > 1.0f || b > 1.0f) { 
+                        color = Vec3(r/255.0f, g/255.0f, b/255.0f);
+                     } else {
+                        color = Vec3(r, g, b);
+                     }
+                }
+            }
+            if (entity.properties.count("intensity")) {
+                intensity = std::stof(entity.properties.at("intensity"));
+            }
+            if (entity.properties.count("radius")) {
+                radius = std::stof(entity.properties.at("radius"));
+            }
+
+            worldRender.AddPointLight(entity.position, color, intensity, radius);
+        }
+    }
+
     worldRender.RebuildBatches();
 
     LOG_DEBUG("MapRenderer", "Synced " + std::to_string(worldRender.GetObjectCount()) + " render objects");

@@ -43,6 +43,9 @@ static MaterialPtr g_matDebug;
 // ============================================================================
 // Setup World Collision Geometry - Now handled by MapRenderer
 // ============================================================================
+// Forward declarations
+void LoadAndCompileMap();
+
 // The world collision is now set up automatically when loading a map via MapRenderer.
 // This function is kept as a fallback for when no map is loaded.
 void SetupWorldCollision() {
@@ -53,14 +56,228 @@ void SetupWorldCollision() {
 }
 
 // ============================================================================
+// Internal Helper: Load Map & Recompile
+// ============================================================================
+void LoadAndCompileMap(bool openConsole) {
+    auto& mapRenderer = MapRenderer::Instance();
+    auto& bspRenderer = BSPRenderer::Instance();
+    auto& staticWorld = StaticWorldRenderer::Instance();
+    
+    // Clear previous state
+    bspRenderer.SetRenderingActive(false);
+    staticWorld.Clear();
+    
+    // Load the test map - SAU first (has lights from editor), then JSON
+    bool mapLoaded = false;
+#ifdef ASSETS_DIR
+    std::string mapPath = std::string(ASSETS_DIR) + "/maps/moody_demo.sau";
+    LOG_INFO("Game", "Attempting to load: " + mapPath);
+    mapLoaded = mapRenderer.LoadMap(mapPath);
+#else
+    LOG_INFO("Game", "Attempting to load: moody_demo.sau (Relative)");
+    mapLoaded = mapRenderer.LoadMap("moody_demo.sau");
+#endif
+
+    if (!mapLoaded) {
+        if (!mapRenderer.LoadMap("moody_demo.sau") && !mapRenderer.LoadMap("moody_demo.json")) {
+            if (!mapRenderer.LoadMap("large_culling_demo.json")) {
+                LOG_WARNING("Game", "Failed to load large_culling_demo.json, trying bsp_demo.json...");
+                if (!mapRenderer.LoadMap("bsp_demo.json")) {
+                    LOG_WARNING("Game", "Failed to load bsp_demo.json, trying testmap.json...");
+                    if (!mapRenderer.LoadMap("testmap.json")) {
+                        LOG_ERROR("Game", "Failed to load any map file!");
+                        // Fall back to a simple floor
+                        staticWorld.Clear();
+                        auto groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
+                        auto matFloor = MaterialLibrary::Instance().CreateSolidColor("Floor", Vec3(0.15f, 0.15f, 0.18f));
+                        staticWorld.AddFloor(groundPlane, matFloor, glm::translate(Mat4(1.0f), Vec3(0.0f, 0.0f, 0.0f)));
+                        staticWorld.SetDirectionalLight(Vec3(0.5f, 1.0f, 0.3f), Vec3(1.0f, 0.98f, 0.95f), 1.0f);
+                        staticWorld.SetAmbientLight(Vec3(0.15f, 0.15f, 0.2f), 1.0f);
+                        staticWorld.RebuildBatches();
+                        SetupWorldCollision();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    LOG_INFO("Game", "Map loaded with " + std::to_string(mapRenderer.GetBrushCount()) + " brushes");
+    
+    // Always print success message if map loaded (verified by HasMap)
+    if (mapRenderer.HasMap()) {
+        std::string mapName = mapRenderer.GetActiveMap()->GetName();
+        std::string msg = "LOADED MAP: [" + mapName + "]";
+        
+        // 1. In-game console (Cyan-Green)
+        GUI::Console::Instance().PrintSuccess(msg);
+        if (openConsole) {
+            GUI::Console::Instance().Open(); // Force open so user sees it
+        }
+        
+        // 2. Standard Output (ANSI Cyan)
+        std::cout << "\033[36m" << "CONSOLE: " << msg << "\033[0m" << std::endl;
+    } else {
+        LOG_ERROR("Game", "Map load failed or no map active");
+    }
+
+    // ========================================================================
+    // BSP Compilation - Compile map to BSP tree for alternative rendering
+    // ========================================================================
+    if (mapRenderer.HasMap()) {
+        LOG_INFO("Game", "Compiling map to BSP...");
+        bspRenderer.InitializeShaders();
+
+        if (bspRenderer.CompileMap(mapRenderer.GetActiveMap())) {
+            LOG_INFO("Game", "BSP compilation successful! Map: " + mapRenderer.GetActiveMap()->GetName() + 
+                     ", Brushes: " + std::to_string(mapRenderer.GetBrushCount()));
+            
+            // ================================================================
+            // Phase 4: Add Map Lights and Bake
+            // ================================================================
+            auto bsp = bspRenderer.GetBSP();
+            if (bsp) {
+                // Clear any existing lights
+                bsp->ClearLights();
+                
+                // 1. Sun (Moonlight) from metadata
+                auto& meta = mapRenderer.GetActiveMap()->GetMetadata();
+                bsp->AddLight(StaticLight::CreateDirectional(
+                    meta.sunDirection,
+                    meta.sunColor,
+                    meta.sunIntensity * 1.5f 
+                ));
+                
+                // 2. Add lights from Map Entities
+                const auto& entities = mapRenderer.GetActiveMap()->GetEntities();
+                int mapLightsAdded = 0;
+                
+                for (const auto& ent : entities) {
+                    if (ent.classname == "light") {
+                        // Position
+                        Vec3 pos = ent.position;
+                        
+                        // Color
+                        Vec3 color(1.0f);
+                        if (ent.properties.find("color") != ent.properties.end()) {
+                            std::stringstream ss(ent.properties.at("color"));
+                            float r, g, b;
+                            ss >> r >> g >> b;
+                            if (r > 1.0f || g > 1.0f || b > 1.0f) {
+                                color = Vec3(r/255.0f, g/255.0f, b/255.0f);
+                            } else {
+                                color = Vec3(r, g, b);
+                            }
+                        }
+                        
+                        // Intensity
+                        float intensity = 300.0f;
+                        if (ent.properties.find("intensity") != ent.properties.end()) {
+                            try { intensity = std::stof(ent.properties.at("intensity")); } catch (...) {}
+                        }
+                        float bspIntensity = intensity / 200.0f;
+                        
+                        // Radius
+                        float radius = 30.0f;
+                        if (ent.properties.find("radius") != ent.properties.end()) {
+                            try { radius = std::stof(ent.properties.at("radius")); } catch (...) {}
+                        }
+                        
+                        bsp->AddLight(StaticLight::CreatePoint(pos, color, bspIntensity, radius));
+                        mapLightsAdded++;
+                    }
+                }
+                LOG_INFO("Game", "Added " + std::to_string(mapLightsAdded) + " lights from map entities");
+                
+                // Bake the lighting
+                LOG_INFO("Game", "Baking lightmaps (this may take a moment)...");
+                LightBaker baker;
+                LightBaker::Options bakeOptions;
+                bakeOptions.texelsPerUnit = 2.0f;       
+                bakeOptions.maxLightmapSize = 32;       
+                bakeOptions.minLightmapSize = 4;
+                bakeOptions.ambientLight = 0.1f;       
+                bakeOptions.shadowBias = 0.05f;        
+                bakeOptions.numSamples = 1;            
+                bakeOptions.verbose = true;
+                
+                baker.BakeWithSceneLights(*bsp, bakeOptions);
+                
+                auto stats = baker.GetLastStats();
+                LOG_INFO("Game", "Lightmap baking complete! " + 
+                         std::to_string(stats.numTexels) + " texels, " +
+                         std::to_string(stats.numShadowRays) + " shadow rays, " +
+                         std::to_string(stats.bakeTimeSeconds) + "s");
+            }
+
+            // Enable BSP rendering by default
+            g_useBSPRendering = true;
+            bspRenderer.SetRenderingActive(true);
+        } else {
+            LOG_ERROR("Game", "BSP compilation failed");
+            // Fallback to static mesh rendering
+            auto& map = *mapRenderer.GetActiveMap();
+            staticWorld.Clear();
+            for (const auto& brush : map.GetBrushes()) {
+                if (!HasFlag(brush.flags, BrushFlags::NoRender)) {
+                    staticWorld.Add(brush.mesh, brush.material, brush.transform);
+                }
+            }
+            staticWorld.RebuildBatches();
+            SetupWorldCollision();
+        }
+    }
+
+    // ========================================================================
+    // Player Spawn Reset
+    // ========================================================================
+    Vec3 spawnPos(0, 5, 0);  // Default
+    float spawnYaw = 0.0f;
+    
+    if (mapRenderer.HasMap()) {
+        const auto& meta = mapRenderer.GetActiveMap()->GetMetadata();
+        spawnPos = meta.spawnPosition;
+        
+        // Also check for info_player_start entity
+        for (const auto& ent : mapRenderer.GetActiveMap()->GetEntities()) {
+            if (ent.classname == "info_player_start") {
+                spawnPos = ent.position;
+                spawnYaw = ent.rotation.y;
+                break;
+            }
+        }
+        
+        LOG_INFO("Game", "Player spawn from map: " + std::to_string(spawnPos.x) + ", " + 
+                 std::to_string(spawnPos.y) + ", " + std::to_string(spawnPos.z));
+    }
+
+    // Reset player state
+    g_player.SetPosition(spawnPos);
+    g_player.GetController().SetLookDirection(spawnYaw, 0.0f);
+    g_player.GetController().SetVelocity(Vec3(0.0f));
+}
+
+// ============================================================================
 // Game Initialization
 // ============================================================================
 bool OnInit() {
     LOG_INFO("Game", "Initializing game...");
 
+    // Initialize GUI
+    if (!GUI::GUIRenderer::Instance().Initialize()) {
+        LOG_ERROR("Game", "Failed to initialize GUI Renderer");
+        return false;
+    }
+    GUI::Console::Instance().Initialize();
+
     // Load shaders
     auto& shaderLib = ShaderLibrary::Instance();
-
+#ifdef ASSETS_DIR
+    std::string shaderPath = std::string(ASSETS_DIR) + "/shaders/";
+    shaderLib.SetShaderBasePath(shaderPath);
+#else
+    shaderLib.SetShaderBasePath("assets/shaders/");
+#endif
     g_debugShader = shaderLib.Load("debug", "debug.vert", "debug.frag");
     if (!g_debugShader) {
         LOG_ERROR("Game", "Failed to load debug shader");
@@ -109,148 +326,18 @@ bool OnInit() {
 
     LOG_INFO("Game", "Materials created!");
 
-    // ========================================================================
-    // Load Map from file - World geometry is now data-driven!
-    // ========================================================================
-    LOG_INFO("Game", "Loading map...");
-
-    auto& mapRenderer = MapRenderer::Instance();
-
-    // Load the test map - prioritize our new moody demo
-    if (!mapRenderer.LoadMap("moody_demo.json")) {
-        LOG_WARNING("Game", "Failed to load moody_demo.json, trying large_culling_demo.json...");
-        if (!mapRenderer.LoadMap("large_culling_demo.json")) {
-            LOG_WARNING("Game", "Failed to load large_culling_demo.json, trying bsp_demo.json...");
-            if (!mapRenderer.LoadMap("bsp_demo.json")) {
-                LOG_WARNING("Game", "Failed to load bsp_demo.json, trying testmap.json...");
-                if (!mapRenderer.LoadMap("testmap.json")) {
-                LOG_ERROR("Game", "Failed to load any map file!");
-                // Fall back to a simple floor
-                auto& staticWorld = StaticWorldRenderer::Instance();
-                staticWorld.Clear();
-                auto groundPlane = MeshPrimitives::CreatePlane(60.0f, 60.0f, 30, 30, "GroundPlane");
-                auto matFloor = MaterialLibrary::Instance().CreateSolidColor("Floor", Vec3(0.15f, 0.15f, 0.18f));
-                staticWorld.AddFloor(groundPlane, matFloor, glm::translate(Mat4(1.0f), Vec3(0.0f, 0.0f, 0.0f)));
-                staticWorld.SetDirectionalLight(Vec3(0.5f, 1.0f, 0.3f), Vec3(1.0f, 0.98f, 0.95f), 1.0f);
-                staticWorld.SetAmbientLight(Vec3(0.15f, 0.15f, 0.2f), 1.0f);
-                staticWorld.RebuildBatches();
-                SetupWorldCollision();
-            }
-        }
-        }
-    }
-
-    LOG_INFO("Game", "Map loaded with " + std::to_string(mapRenderer.GetBrushCount()) + " brushes");
 
     // ========================================================================
-    // BSP Compilation - Compile map to BSP tree for alternative rendering
+    // Player Setup
     // ========================================================================
-    if (mapRenderer.HasMap()) {
-        LOG_INFO("Game", "Compiling map to BSP...");
-        auto& bspRenderer = BSPRenderer::Instance();
-        bspRenderer.InitializeShaders();
-
-        if (bspRenderer.CompileMap(mapRenderer.GetActiveMap())) {
-            LOG_INFO("Game", "BSP compilation successful! Map: " + mapRenderer.GetActiveMap()->GetName() + 
-                     ", Brushes: " + std::to_string(mapRenderer.GetBrushCount()));
-            
-            // ================================================================
-            // Phase 4: Add test static lights and bake lighting
-            // ================================================================
-            auto bsp = bspRenderer.GetBSP();
-            if (bsp) {
-                LOG_INFO("Game", "Adding simple test lights near spawn...");
-                
-                // Clear any existing lights
-                bsp->ClearLights();
-                
-                // 1. Sun (Moonlight) from metadata
-                auto& meta = mapRenderer.GetActiveMap()->GetMetadata();
-                bsp->AddLight(StaticLight::CreateDirectional(
-                    meta.sunDirection,
-                    meta.sunColor,
-                    meta.sunIntensity * 1.5f // Reduced from 3.0f
-                ));
-                
-                // 2. Add colored point lights for the Pillars
-                // Pillar 1 area (Orange)
-                bsp->AddLight(StaticLight::CreatePoint(
-                    Vec3(-10.0f, 6.0f, -10.0f), 
-                    Vec3(1.0f, 0.6f, 0.2f), 
-                    2.5f, // Reduced from 4.0f
-                    30.0f
-                ));
-
-                // Pillar 2 area (Blue)
-                bsp->AddLight(StaticLight::CreatePoint(
-                    Vec3(10.0f, 6.0f, 10.0f), 
-                    Vec3(0.2f, 0.6f, 1.0f),
-                    2.5f, // Reduced from 4.0f
-                    30.0f
-                ));
-                // Pillar 3 area (Purple)
-                bsp->AddLight(StaticLight::CreatePoint(
-                    Vec3(-10.0f, 6.0f, 10.0f), 
-                    Vec3(0.8f, 0.2f, 1.0f),
-                    2.5f, 
-                    30.0f
-                ));
-
-                // Pillar 4 area (Green)
-                bsp->AddLight(StaticLight::CreatePoint(
-                    Vec3(10.0f, 6.0f, -10.0f), 
-                    Vec3(0.2f, 1.0f, 0.2f),
-                    2.5f, 
-                    30.0f
-                ));
-                // 3. Central light (platform)
-                bsp->AddLight(StaticLight::CreatePoint(
-                    Vec3(0.0f, 8.0f, 0.0f), // Higher up
-                    Vec3(1.0f, 0.95f, 0.8f),
-                    1.2f, // Reduced from 2.0f
-                    20.0f
-                ));
-                
-                LOG_INFO("Game", "Added " + std::to_string(bsp->GetLights().size()) + " lights");
-                
-                // Bake the lighting
-                LOG_INFO("Game", "Baking lightmaps (this may take a moment)...");
-                LightBaker baker;
-                LightBaker::Options bakeOptions;
-                bakeOptions.texelsPerUnit = 2.0f;       
-                bakeOptions.maxLightmapSize = 32;       
-                bakeOptions.minLightmapSize = 4;
-                bakeOptions.ambientLight = 0.1f;       // Standard ambient
-                bakeOptions.shadowBias = 0.05f;        
-                bakeOptions.numSamples = 1;            // Hard Shadows + Smoothing (Source Style)
-                
-                bakeOptions.verbose = true;
-                
-                baker.BakeWithSceneLights(*bsp, bakeOptions);
-                
-                auto stats = baker.GetLastStats();
-                LOG_INFO("Game", "Lightmap baking complete! " + 
-                         std::to_string(stats.numTexels) + " texels, " +
-                         std::to_string(stats.numShadowRays) + " shadow rays, " +
-                         std::to_string(stats.bakeTimeSeconds) + "s");
-            }
-        } else {
-            LOG_WARNING("Game", "BSP compilation failed, using standard rendering.");
-        }
-    }
-
-    // Setup lighting from map metadata (or use defaults)
-    auto& staticWorld = StaticWorldRenderer::Instance();
-    if (mapRenderer.HasMap()) {
-        auto& meta = mapRenderer.GetActiveMap()->GetMetadata();
-        staticWorld.SetDirectionalLight(meta.sunDirection, meta.sunColor, meta.sunIntensity);
-        staticWorld.SetAmbientLight(meta.ambientColor, 1.0f);
-    }
-
     // Configure and initialize player
     Game::PlayerConfig playerConfig;
 
+    // Load Default Map (moody_demo.sau via LoadAndCompileMap)
+    LoadAndCompileMap(false); // Don't force open console on startup
+
     // Get spawn position from map, or use default
+    auto& mapRenderer = MapRenderer::Instance();
     if (mapRenderer.HasMap()) {
         playerConfig.spawnPosition = mapRenderer.GetSpawnPosition();
         LOG_INFO("Game", "Player spawn from map: " +
@@ -377,6 +464,7 @@ void DrawCollisionDebug() {
     }
 
     // Draw brush mesh wireframes (magenta/pink for visual geometry)
+    auto& staticWorld = StaticWorldRenderer::Instance();
     auto& mapRenderer = MapRenderer::Instance();
     if (mapRenderer.HasMap()) {
         const auto& brushes = mapRenderer.GetActiveMap()->GetBrushes();
@@ -627,12 +715,18 @@ void OnInput(double deltaTime) {
         }
     }
 
-    // F5 - Toggle PVS (Potentially Visible Set) when in BSP mode
+    // F5 - Hot-reload map (re-compile BSP and re-bake lighting)
     if (input.IsKeyPressed(KeyCode::F5)) {
+        GUI::Console::Instance().Print("Reloading map...", GUI::MessageType::Warning);
+        LoadAndCompileMap(false); // Don't force open console
+    }
+
+    // F8 - Toggle PVS (Potentially Visible Set) when in BSP mode
+    if (input.IsKeyPressed(KeyCode::F8)) {
         if (BSPRenderer::Instance().HasPVS()) {
             bool usePVS = !BSPRenderer::Instance().GetUsePVS();
             BSPRenderer::Instance().SetUsePVS(usePVS);
-            LOG_INFO("Debug", usePVS ? "PVS culling ON (F5)" : "PVS culling OFF (F5)");
+            LOG_INFO("Debug", usePVS ? "PVS culling ON (F8)" : "PVS culling OFF (F8)");
         } else {
             LOG_WARNING("Debug", "No PVS available");
         }
@@ -668,6 +762,9 @@ void OnUpdate(double deltaTime) {
 
     // Update BSP build visualizer playback
     BSPBuildVisualizer::Instance().Update(static_cast<float>(deltaTime));
+
+    // Update Console
+    GUI::Console::Instance().Update(static_cast<float>(deltaTime));
 }
 
 // ============================================================================
@@ -733,6 +830,16 @@ void OnRender(double interpolation) {
 
         g_debugShader->Unbind();
     }
+
+    // ========================================================================
+    // GUI Rendering
+    // ========================================================================
+    int width = engine.GetScreenWidth();
+    int height = engine.GetScreenHeight();
+    
+    GUI::GUIRenderer::Instance().BeginFrame(width, height);
+    GUI::Console::Instance().Render(width, height);
+    GUI::GUIRenderer::Instance().EndFrame();
 }
 
 // ============================================================================

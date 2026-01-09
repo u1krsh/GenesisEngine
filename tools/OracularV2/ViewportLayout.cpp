@@ -112,14 +112,53 @@ void ViewportLayout::Render(Grid* grid, Genesis::Map* map,
                 ImVec2(0, 1), ImVec2(1, 0)
             );
             
-            // Handle viewport input when hovered
-            if (ImGui::IsItemHovered()) {
-                m_activeViewport = i;
+            // Handle viewport input when hovered OR if this is the active viewport and we are transforming
+            bool isTransforming = (m_transform.mode != TransformMode::None && m_activeViewport == i);
+            
+            if (ImGui::IsItemHovered() || isTransforming) {
+                if (ImGui::IsItemHovered()) m_activeViewport = i;
                 
                 // Handle input
                 HandleViewportInput(m_viewports[i].get(), i, grid, 
                                    brushes, entities, selection, gizmo, blockTool, 
                                    currentTool, entityType);
+            }
+            
+            // Draw box selection rectangle overlay
+            if (m_boxSelect.active && m_boxSelect.viewportIndex == i) {
+                ImDrawList* drawList = ImGui::GetWindowDrawList();
+                ImVec2 p1(cursorPos.x + m_boxSelect.startPos.x, cursorPos.y + m_boxSelect.startPos.y);
+                ImVec2 p2(cursorPos.x + m_boxSelect.endPos.x, cursorPos.y + m_boxSelect.endPos.y);
+                drawList->AddRectFilled(p1, p2, IM_COL32(50, 100, 200, 50));
+                drawList->AddRect(p1, p2, IM_COL32(100, 150, 255, 200), 0.0f, 0, 2.0f);
+            }
+            
+            // Draw transform mode status overlay
+            if (m_transform.mode != TransformMode::None) {
+                ImDrawList* drawList = ImGui::GetWindowDrawList();
+                const char* modeText = "";
+                switch (m_transform.mode) {
+                    case TransformMode::Translate: modeText = "GRAB"; break;
+                    case TransformMode::Rotate: modeText = "ROTATE"; break;
+                    case TransformMode::Scale: modeText = "SCALE"; break;
+                    default: break;
+                }
+                
+                const char* axisText = "";
+                ImU32 axisColor = IM_COL32(255, 255, 255, 255);
+                switch (m_transform.axis) {
+                    case TransformAxis::X: axisText = " X"; axisColor = IM_COL32(255, 100, 100, 255); break;
+                    case TransformAxis::Y: axisText = " Y"; axisColor = IM_COL32(100, 255, 100, 255); break;
+                    case TransformAxis::Z: axisText = " Z"; axisColor = IM_COL32(100, 100, 255, 255); break;
+                    default: break;
+                }
+                
+                ImVec2 textPos(cursorPos.x + 10, cursorPos.y + 10);
+                drawList->AddText(textPos, IM_COL32(255, 255, 255, 255), modeText);
+                if (m_transform.axis != TransformAxis::None) {
+                    ImVec2 axisTextPos(textPos.x + ImGui::CalcTextSize(modeText).x, textPos.y);
+                    drawList->AddText(axisTextPos, axisColor, axisText);
+                }
             }
         }
         
@@ -164,11 +203,19 @@ void ViewportLayout::HandleViewportInput(Viewport* viewport, int viewportIndex,
         return; // Consume input
     }
 
-    // Trigger Transforms (G, R, S)
-    if (currentTool == EditorTool::Select && ImGui::IsWindowFocused()) {
-        if (ImGui::IsKeyPressed(ImGuiKey_G)) StartTransform(TransformMode::Translate, selection, Genesis::Vec2(localX, localY));
+    // Trigger Transforms (G, R, S) - only when Select tool is active
+    if (currentTool == EditorTool::Select) {
+        if (ImGui::IsKeyPressed(ImGuiKey_G)) {
+             int count = selection->GetSelectedCount();
+             std::cout << "[DEBUG] G key pressed! Selection count: " << count << " ActiveViewport: " << m_activeViewport << "\n";
+             if (count > 0) {
+                 StartTransform(TransformMode::Translate, selection, Genesis::Vec2(localX, localY));
+             } else {
+                 std::cout << "[DEBUG] Cannot Grab: No selection.\n";
+             }
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_R)) StartTransform(TransformMode::Rotate, selection, Genesis::Vec2(localX, localY));
-        if (ImGui::IsKeyPressed(ImGuiKey_S)) StartTransform(TransformMode::Scale, selection, Genesis::Vec2(localX, localY));
+        if (ImGui::IsKeyPressed(ImGuiKey_S) && !io.KeyCtrl) StartTransform(TransformMode::Scale, selection, Genesis::Vec2(localX, localY));
     }
     
     // ------------------------------------------------------------------------
@@ -195,9 +242,9 @@ void ViewportLayout::HandleViewportInput(Viewport* viewport, int viewportIndex,
         }
     }
     
-    // Mouse wheel zoom (Standard)
+    // Mouse wheel zoom (Zoom towards cursor)
     if (io.MouseWheel != 0) {
-        viewport->Zoom(io.MouseWheel);
+        viewport->ZoomAtPoint(io.MouseWheel, localX, localY);
     }
 
     // Numpad View Switching
@@ -247,34 +294,196 @@ void ViewportLayout::HandleViewportInput(Viewport* viewport, int viewportIndex,
         }
     }
     
+    // ------------------------------------------------------------------------
+    // Focus on selection (F key)
+    // ------------------------------------------------------------------------
+    if (ImGui::IsKeyPressed(ImGuiKey_F) && selection && selection->HasSelection()) {
+        Genesis::Vec3 center = selection->GetSelectionCenter();
+        viewport->FocusOn(center);
+    }
+    
+    // Home key resets view
+    if (ImGui::IsKeyPressed(ImGuiKey_Home)) {
+        viewport->FocusOn(Genesis::Vec3(0.0f));
+    }
+    
+    // ------------------------------------------------------------------------
+    // Hover highlighting
+    // ------------------------------------------------------------------------
+    if (brushes && currentTool == EditorTool::Select && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        // Clear all hover states first
+        for (auto& brush : *brushes) {
+            brush.isHovered = false;
+        }
+        
+        // Find brush under cursor and highlight it
+        EditorBrush* hoveredBrush = RaycastBrush(viewport, localX, localY, brushes);
+        if (hoveredBrush) {
+            hoveredBrush->isHovered = true;
+        }
+    }
+    
+    // ------------------------------------------------------------------------
+    // Shift+D Duplicate
+    // ------------------------------------------------------------------------
+    if (ImGui::IsKeyPressed(ImGuiKey_D) && io.KeyShift && selection && selection->HasSelection() && brushes) {
+        // Duplicate selected brushes
+        std::vector<EditorBrush*> newBrushes;
+        for (auto* brush : selection->GetSelectedBrushes()) {
+            EditorBrush copy = *brush;
+            copy.editorId = 0; // Will be assigned when added
+            copy.isSelected = false;
+            copy.brush.position += Genesis::Vec3(32, 0, 32); // Offset duplicate
+            brushes->push_back(copy);
+            newBrushes.push_back(&brushes->back());
+        }
+        
+        // Select the new duplicates
+        selection->ClearSelection();
+        for (auto* b : newBrushes) {
+            selection->Select(b, true);
+        }
+        
+        // Start transform immediately
+        StartTransform(TransformMode::Translate, selection, Genesis::Vec2(localX, localY));
+    }
+    
     // Left click handling based on tool
     if (currentTool == EditorTool::Select) {
         // Selection tool
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            EditorBrush* hitBrush = RaycastBrush(viewport, localX, localY, brushes);
-            EditorEntity* hitEntity = RaycastEntity(viewport, localX, localY, entities);
+            Genesis::Vec2 clickPos(localX, localY);
+            double currentTime = ImGui::GetTime();
+            
+            // Check if this is a repeat click at same location for click-through
+            bool isSameSpot = (glm::distance(clickPos, m_clickThrough.lastClickPos) < 5.0f &&
+                               viewportIndex == m_clickThrough.viewportIndex &&
+                               (currentTime - m_clickThrough.lastClickTime) < m_clickThrough.clickTimeout);
+            
+            if (isSameSpot) {
+                m_clickThrough.cycleIndex++;
+            } else {
+                m_clickThrough.cycleIndex = 0;
+            }
+            
+            m_clickThrough.lastClickPos = clickPos;
+            m_clickThrough.viewportIndex = viewportIndex;
+            m_clickThrough.lastClickTime = currentTime;
+            
+            // Collect all objects under cursor sorted by distance
+            // Use a variant to store both brushes and entities
+            Genesis::Ray ray = viewport->ScreenToWorldRay(localX, localY);
+            
+            struct HitObject {
+                float distance;
+                bool isBrush;
+                void* ptr;  // EditorBrush* or EditorEntity*
+            };
+            std::vector<HitObject> allHits;
+            
+            // Collect brushes
+            if (brushes) {
+                for (auto& brush : *brushes) {
+                    if (!brush.isVisible) continue;
+                    Genesis::AABB aabb = brush.GetAABB();
+                    float t = ray.IntersectAABB(aabb);
+                    if (t > 0) {
+                        allHits.push_back({t, true, &brush});
+                    }
+                }
+            }
+            
+            // Collect entities
+            if (entities) {
+                for (auto& entity : *entities) {
+                    if (!entity.isVisible) continue;
+                    // Reduced radius from 16.0f to 5.0f for more precise selection
+                    // Prevents accidental selection when clicking "off" (empty space)
+                    float radius = 5.0f;
+                    Genesis::AABB aabb(
+                        entity.entity.position - Genesis::Vec3(radius),
+                        entity.entity.position + Genesis::Vec3(radius)
+                    );
+                    float t = ray.IntersectAABB(aabb);
+                    if (t > 0) {
+                        allHits.push_back({t, false, &entity});
+                    }
+                }
+            }
+            
+            // Sort by distance (front to back)
+            std::sort(allHits.begin(), allHits.end(),
+                [](const HitObject& a, const HitObject& b) { return a.distance < b.distance; });
             
             bool addToSelection = io.KeyCtrl || io.KeyShift;
             
-            if (hitBrush) {
-                if (addToSelection) {
-                    selection->ToggleSelection(hitBrush);
+            if (!allHits.empty()) {
+                int idx = m_clickThrough.cycleIndex % (int)allHits.size();
+                HitObject& hit = allHits[idx];
+                
+                if (hit.isBrush) {
+                    EditorBrush* hitBrush = static_cast<EditorBrush*>(hit.ptr);
+                    if (addToSelection) {
+                        selection->ToggleSelection(hitBrush);
+                    } else {
+                        selection->Select(hitBrush, false);
+                    }
                 } else {
-                    selection->Select(hitBrush, false);
+                    EditorEntity* hitEntity = static_cast<EditorEntity*>(hit.ptr);
+                    if (!addToSelection) {
+                        selection->ClearSelection();
+                    }
+                    selection->SelectEntity(hitEntity, addToSelection);
                 }
-            } else if (hitEntity) {
-                // TODO: Proper entity selection
-                if (!addToSelection) {
-                    selection->ClearSelection();
-                }
-                selection->SelectEntity(&hitEntity->entity, addToSelection);
             } else if (!addToSelection) {
+                // No hit - start box selection
+                m_boxSelect.active = true;
+                m_boxSelect.startPos = Genesis::Vec2(localX, localY);
+                m_boxSelect.endPos = m_boxSelect.startPos;
+                m_boxSelect.viewportIndex = viewportIndex;
                 selection->ClearSelection();
             }
         }
         
+        // Update box selection while dragging
+        if (m_boxSelect.active && m_boxSelect.viewportIndex == viewportIndex) {
+            m_boxSelect.endPos = Genesis::Vec2(localX, localY);
+            
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                // Finish box selection - select all brushes in the box
+                float minX = std::min(m_boxSelect.startPos.x, m_boxSelect.endPos.x);
+                float maxX = std::max(m_boxSelect.startPos.x, m_boxSelect.endPos.x);
+                float minY = std::min(m_boxSelect.startPos.y, m_boxSelect.endPos.y);
+                float maxY = std::max(m_boxSelect.startPos.y, m_boxSelect.endPos.y);
+                
+                // Only do box selection if we dragged a meaningful distance
+                if (maxX - minX > 5 && maxY - minY > 5 && brushes) {
+                    for (auto& brush : *brushes) {
+                        if (!brush.isVisible) continue;
+                        
+                        // Project brush center to screen
+                        Genesis::Vec3 brushCenter = brush.GetCenter();  // Position IS center
+                        Genesis::Mat4 vp = viewport->GetCamera().GetViewProjectionMatrix();
+                        Genesis::Vec4 clip = vp * Genesis::Vec4(brushCenter, 1.0f);
+                        
+                        if (clip.w > 0) {
+                            Genesis::Vec2 ndc(clip.x / clip.w, clip.y / clip.w);
+                            float screenX = (ndc.x * 0.5f + 0.5f) * viewport->GetWidth();
+                            float screenY = (0.5f - ndc.y * 0.5f) * viewport->GetHeight();
+                            
+                            if (screenX >= minX && screenX <= maxX && screenY >= minY && screenY <= maxY) {
+                                selection->Select(&brush, true);
+                            }
+                        }
+                    }
+                }
+                
+                m_boxSelect.active = false;
+            }
+        }
+        
         // Gizmo dragging
-        if (gizmo && selection->HasSelection()) {
+        if (gizmo && selection->HasSelection() && !m_boxSelect.active) {
             if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !gizmo->IsDragging()) {
                 Genesis::Ray ray = viewport->ScreenToWorldRay(localX, localY);
                 GizmoAxis axis = gizmo->HitTest(ray);
@@ -290,7 +499,7 @@ void ViewportLayout::HandleViewportInput(Viewport* viewport, int viewportIndex,
                         brush->brush.position += delta;
                     }
                     for (auto* entity : selection->GetSelectedEntities()) {
-                        entity->position += delta;
+                        entity->entity.position += delta;
                     }
                     gizmo->SetPosition(selection->GetSelectionCenter());
                 } else {
@@ -326,11 +535,32 @@ void ViewportLayout::HandleViewportInput(Viewport* viewport, int viewportIndex,
                 worldPos = viewport->ScreenToWorld(localX, localY, 0.0f);
             } else {
                 Genesis::Ray ray = viewport->ScreenToWorldRay(localX, localY);
-                float t = ray.IntersectPlane(Genesis::Vec3(0, 1, 0), 0);
-                if (t > 0) {
-                    worldPos = ray.GetPoint(t);
+                float closestT = std::numeric_limits<float>::max();
+                bool hitSurface = false;
+                
+                // 1. Check Brushes (Closest surface)
+                if (brushes) {
+                    for (auto& brush : *brushes) {
+                        if (!brush.isVisible) continue;
+                        float t = ray.IntersectAABB(brush.GetAABB());
+                        if (t > 0 && t < closestT) {
+                            closestT = t;
+                            hitSurface = true;
+                        }
+                    }
+                }
+                
+                if (hitSurface) {
+                    worldPos = ray.GetPoint(closestT);
                 } else {
-                    worldPos = ray.GetPoint(100.0f);
+                    // 2. Fallback to Ground Plane (Y=0)
+                    float t = ray.IntersectPlane(Genesis::Vec3(0, 1, 0), 0);
+                    if (t > 0) {
+                        worldPos = ray.GetPoint(t);
+                    } else {
+                        // 3. Fallback to constant distance (sky)
+                        worldPos = ray.GetPoint(100.0f);
+                    }
                 }
             }
             
@@ -355,7 +585,7 @@ void ViewportLayout::HandleViewportInput(Viewport* viewport, int viewportIndex,
             
             // Select the new entity
             selection->ClearSelection();
-            selection->SelectEntity(&entities->back().entity, false);
+            selection->SelectEntity(&entities->back(), false);
         }
     }
 }
@@ -452,8 +682,8 @@ void ViewportLayout::StartTransform(TransformMode mode, SelectionManager* select
     // Entities
     auto& entities = selection->GetSelectedEntities();
     for (auto* ent : entities) {
-        m_transform.items.emplace_back((void*)ent, false, ent->position, Genesis::Vec3(0.0f), ent->rotation);
-        sumPos += ent->position;
+        m_transform.items.emplace_back((void*)ent, false, ent->entity.position, Genesis::Vec3(0.0f), ent->entity.rotation);
+        sumPos += ent->entity.position;
         count++;
     }
     
@@ -480,9 +710,9 @@ void ViewportLayout::CancelTransform() {
             brush->brush.size = item.startSize;
             brush->brush.rotation = item.startRot;
         } else {
-            auto* ent = static_cast<Genesis::MapEntity*>(item.ptr);
-            ent->position = item.startPos;
-            ent->rotation = item.startRot;
+            auto* ent = static_cast<EditorEntity*>(item.ptr);
+            ent->entity.position = item.startPos;
+            ent->entity.rotation = item.startRot;
         }
     }
     
@@ -498,14 +728,19 @@ void ViewportLayout::UpdateTransform(const Genesis::Vec2& currentMouse, Viewport
     float angle = 0.0f;
     float scale = 1.0f;
     
-    // Get depth of center
-    Genesis::Vec3 camPos = viewport->GetCamera().GetPosition();
+    // Calculate NDC depth of the selection center
+    // This is required because ScreenToWorld expects depth in NDC range [-1, 1], not linear world distance
+    Genesis::Mat4 viewProj = viewport->GetCamera().GetViewProjectionMatrix();
+    Genesis::Vec4 clipPos = viewProj * Genesis::Vec4(m_transform.center, 1.0f);
+    float depth = clipPos.z / clipPos.w;
+    
     Genesis::Vec3 camFwd = viewport->GetCamera().GetForward();
-    float depth = glm::dot(m_transform.center - camPos, camFwd);
     
     // Check for orthogonality
     if (!viewport->IsPerspective()) {
-        depth = 0.0f; 
+        // For ortho, we can usually just preserve the center's depth?
+        // Actually, ScreenToWorld with ortho and correct NDC depth should work fine.
+        // But if we want to move parallel to camera plane, we use the center's fixed depth.
     }
     
     if (m_transform.mode == TransformMode::Translate) {
@@ -534,7 +769,7 @@ void ViewportLayout::UpdateTransform(const Genesis::Vec2& currentMouse, Viewport
         if (m_transform.mode == TransformMode::Translate) {
             Genesis::Vec3 newPos = item.startPos + worldDelta;
             if (item.isBrush) static_cast<EditorBrush*>(item.ptr)->brush.position = newPos;
-            else static_cast<Genesis::MapEntity*>(item.ptr)->position = newPos;
+            else static_cast<EditorEntity*>(item.ptr)->entity.position = newPos;
         }
         else if (m_transform.mode == TransformMode::Rotate) {
             // Rotation Axis
@@ -552,7 +787,7 @@ void ViewportLayout::UpdateTransform(const Genesis::Vec2& currentMouse, Viewport
             if (item.isBrush) {
                 static_cast<EditorBrush*>(item.ptr)->brush.position = newPos;
             } else {
-                static_cast<Genesis::MapEntity*>(item.ptr)->position = newPos;
+                static_cast<EditorEntity*>(item.ptr)->entity.position = newPos;
             }
         }
         else if (m_transform.mode == TransformMode::Scale) {
@@ -575,7 +810,7 @@ void ViewportLayout::UpdateTransform(const Genesis::Vec2& currentMouse, Viewport
                 b->brush.position = newPos;
                 b->brush.size = newSize;
             } else {
-                 static_cast<Genesis::MapEntity*>(item.ptr)->position = newPos;
+                 static_cast<EditorEntity*>(item.ptr)->entity.position = newPos;
             }
         }
     }
