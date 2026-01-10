@@ -188,7 +188,13 @@ MapLoader::MapLoader() {
 MapPtr MapLoader::Load(const std::string& filepath, bool skipBuild) {
     ClearError();
 
-    std::string fullPath = m_basePath + filepath;
+    // Check if filepath is already absolute (starts with / on Linux)
+    std::string fullPath;
+    if (!filepath.empty() && filepath[0] == '/') {
+        fullPath = filepath;  // Already absolute, use as-is
+    } else {
+        fullPath = m_basePath + filepath;
+    }
 
     // Detect format by extension
     size_t dotPos = filepath.rfind('.');

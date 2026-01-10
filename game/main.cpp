@@ -67,6 +67,10 @@ void LoadAndCompileMap(bool openConsole) {
     bspRenderer.SetRenderingActive(false);
     staticWorld.Clear();
     
+    // Set "Moody" base lighting to allow point lights to shine
+    staticWorld.SetAmbientLight(Vec3(0.02f, 0.02f, 0.05f), 1.0f);
+    staticWorld.SetDirectionalLight(Vec3(0.5f, 1.0f, 0.3f), Vec3(0.1f, 0.1f, 0.15f), 0.2f);
+    
     // Load the test map - SAU first (has lights from editor), then JSON
     bool mapLoaded = false;
 #ifdef ASSETS_DIR
@@ -140,13 +144,7 @@ void LoadAndCompileMap(bool openConsole) {
                 // Clear any existing lights
                 bsp->ClearLights();
                 
-                // 1. Sun (Moonlight) from metadata
-                auto& meta = mapRenderer.GetActiveMap()->GetMetadata();
-                bsp->AddLight(StaticLight::CreateDirectional(
-                    meta.sunDirection,
-                    meta.sunColor,
-                    meta.sunIntensity * 1.5f 
-                ));
+                // NOTE: No automatic directional light - lighting is entirely from map entities
                 
                 // 2. Add lights from Map Entities
                 const auto& entities = mapRenderer.GetActiveMap()->GetEntities();
@@ -196,7 +194,7 @@ void LoadAndCompileMap(bool openConsole) {
                 bakeOptions.texelsPerUnit = 2.0f;       
                 bakeOptions.maxLightmapSize = 32;       
                 bakeOptions.minLightmapSize = 4;
-                bakeOptions.ambientLight = 0.1f;       
+                bakeOptions.ambientLight = 0.01f;  // Very low ambient for moody lighting       
                 bakeOptions.shadowBias = 0.05f;        
                 bakeOptions.numSamples = 1;            
                 bakeOptions.verbose = true;

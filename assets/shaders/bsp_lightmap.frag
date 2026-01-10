@@ -23,7 +23,7 @@ void main() {
     }
     
     // Lightmap (pre-baked lighting)
-    vec3 light = vec3(1.0);
+    vec3 light = vec3(0.02);  // Very dim fallback (near-black when no lightmap)
     if (hasLightmap) {
         // Lightmap stores pre-multiplied lighting
         light = texture(lightmapTexture, LightmapCoord).rgb;

@@ -308,9 +308,9 @@ private:
 
     // Lighting
     Vec3 m_lightDirection = Vec3(0.5f, 1.0f, 0.3f);
-    Vec3 m_lightColor = Vec3(1.0f, 0.98f, 0.95f);
-    float m_lightIntensity = 1.0f;
-    Vec3 m_ambientColor = Vec3(0.15f, 0.15f, 0.2f);
+    Vec3 m_lightColor = Vec3(0.1f, 0.1f, 0.15f); // Dim moonlight (was bright sun)
+    float m_lightIntensity = 0.2f;               // Low intensity
+    Vec3 m_ambientColor = Vec3(0.02f, 0.02f, 0.05f); // Very dark ambient (was 0.15)
     float m_ambientIntensity = 1.0f;
     
     std::vector<PointLight> m_pointLights;
