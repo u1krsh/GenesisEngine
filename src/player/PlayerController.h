@@ -174,6 +174,10 @@ public:
     bool IsCrouching() const { return m_isCrouching; }
     bool IsJumping() const { return m_isJumping; }
     bool IsFalling() const { return !m_groundInfo.isGrounded && m_velocity.y < 0; }
+    
+    // Noclip mode - fly through walls, ignore gravity and collision
+    bool IsNoclip() const { return m_noclip; }
+    void SetNoclip(bool enabled) { m_noclip = enabled; }
 
     const GroundInfo& GetGroundInfo() const { return m_groundInfo; }
 
@@ -273,6 +277,7 @@ private:
     bool m_isJumping = false;
     bool m_isMoving = false;
     bool m_wantsToJump = false;
+    bool m_noclip = false;  // Noclip mode - fly through walls
 
     // Jump state
     float m_jumpCooldownTimer = 0.0f;

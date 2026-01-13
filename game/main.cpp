@@ -428,6 +428,19 @@ bool OnInit() {
         LOG_INFO("Game", "BSP collision ENABLED for player");
     }
 
+    // ========================================================================
+    // Register Console Commands (Game-specific)
+    // ========================================================================
+    GUI::Console::Instance().RegisterCommand("noclip", [](const std::vector<std::string>&) {
+        bool current = g_player.GetController().IsNoclip();
+        g_player.GetController().SetNoclip(!current);
+        if (!current) {
+            GUI::Console::Instance().PrintSuccess("Noclip ON - Fly through walls, no gravity");
+        } else {
+            GUI::Console::Instance().Print("Noclip OFF - Normal movement restored", GUI::MessageType::Warning);
+        }
+    }, "Toggle noclip mode (fly through walls)");
+
     LOG_INFO("Game", "Game initialized successfully");
     LOG_INFO("Game", "Controls: WASD=Move, Mouse=Look, Shift=Sprint, Space=Jump, Ctrl=Crouch");
     LOG_INFO("Game", "          Left Click=Capture Mouse, Right Click=Release, ESC=Quit");

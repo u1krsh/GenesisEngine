@@ -100,6 +100,10 @@ public:
     MaterialPtr CreateEmissive(const std::string& name, const Vec3& color,
                                 const Vec3& emission, float intensity = 1.0f);
 
+    // Create a glass material (transparent, refractive)
+    MaterialPtr CreateGlass(const std::string& name, const Vec3& tintColor = Vec3(1.0f),
+                            float opacity = 0.3f);
+
     // ========================================================================
     // Batch Operations
     // ========================================================================

@@ -85,16 +85,49 @@ brush {
 }
 
 entity {
-    classname = info_player_start
-    position = -0.475061 11.7782 -0.189062
+    classname = light
+    position = 8.42224 6.68165 -12.8958
+    color_r = "255"
+    color_g = "255"
+    color_b = "255"
+    radius = "165.000000"
+    intensity = "100.000000"
+    color = "0 245 255"
 }
 
 entity {
     classname = light
-    position = -9.26472 8.86511 -11.8417
+    position = 8.30118 6.87263 12.6673
+    color_r = "255"
+    color_g = "255"
+    color_b = "255"
+    radius = "200.000000"
+    intensity = "100.000000"
+    color = "82 255 0"
+}
+
+entity {
+    classname = light
+    position = -8 7.59921 16
+    color_r = "255"
+    color_g = "255"
+    color_b = "255"
+    radius = "200.000000"
+    intensity = "150.000000"
+    color = "0 14 255"
+}
+
+entity {
+    classname = info_player_start
+    position = -0.715159 14.4022 -0.20058
+}
+
+entity {
+    classname = light
+    position = -7.78653 7.03359 -14.2211
     color = "255 0 0"
-    intensity = "550.000000"
-    radius = "25.000000"
+    intensity = "500.000000"
+    radius = "200.000000"
     color_b = "255"
     color_g = "255"
     color_r = "255"

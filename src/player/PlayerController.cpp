@@ -35,6 +35,41 @@ void PlayerController::SetConfig(const PlayerControllerConfig& config) {
 }
 
 void PlayerController::Update(float deltaTime) {
+    // =========================================================================
+    // NOCLIP MODE - Free flight, no collision, no gravity
+    // =========================================================================
+    if (m_noclip) {
+        // Get movement direction in world space
+        Vec3 forward = GetForwardXZ();
+        Vec3 right = GetRightXZ();
+        
+        // Calculate wish direction including vertical (looking up/down moves up/down)
+        float pitchRad = Math::Radians(m_pitch);
+        float yawRad = Math::Radians(m_yaw);
+        Vec3 look3D = Vec3(
+            cos(pitchRad) * cos(yawRad),
+            sin(pitchRad),
+            cos(pitchRad) * sin(yawRad)
+        );
+        
+        Vec3 wishDir = Vec3(0.0f);
+        wishDir += look3D * m_moveInput.z;       // Forward/back follows look direction
+        wishDir += right * m_moveInput.x;         // Strafe is horizontal only
+        
+        // Speed: use sprint speed in noclip for faster navigation
+        float speed = m_isSprinting ? m_config.sprintSpeed * 2.0f : m_config.walkSpeed * 1.5f;
+        
+        // Direct position movement (no physics)
+        m_position += wishDir * speed * deltaTime;
+        
+        // Clear velocity (noclip doesn't use physics velocity)
+        m_velocity = Vec3(0.0f);
+        m_groundInfo.isGrounded = false;
+        
+        UpdateCapsule();
+        return;  // Skip all normal physics
+    }
+    
     // Update jump cooldown
     if (m_jumpCooldownTimer > 0.0f) {
         m_jumpCooldownTimer -= deltaTime;

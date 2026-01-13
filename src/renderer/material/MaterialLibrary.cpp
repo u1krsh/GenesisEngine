@@ -259,6 +259,46 @@ MaterialPtr MaterialLibrary::CreateEmissive(const std::string& name, const Vec3&
     return material;
 }
 
+MaterialPtr MaterialLibrary::CreateGlass(const std::string& name, const Vec3& tintColor,
+                                          float opacity) {
+    // Load glass shader
+    auto& shaderLib = ShaderLibrary::Instance();
+    auto glassShader = shaderLib.Get("glass");
+    
+    if (!glassShader) {
+        glassShader = shaderLib.Load("glass", "glass.vert", "glass.frag");
+    }
+    
+    if (!glassShader) {
+        LOG_ERROR("MaterialLibrary", "Failed to load glass shader for material: " + name);
+        return nullptr;
+    }
+
+    auto material = Create(name, glassShader);
+    if (material) {
+        // Glass properties
+        material->SetVec3("u_TintColor", tintColor);
+        material->SetFloat("u_Opacity", opacity);
+        material->SetFloat("u_RefractStrength", 0.02f);
+        material->SetFloat("u_FresnelPower", 3.0f);
+        material->SetFloat("u_IOR", 1.5f);
+        
+        // Lighting defaults
+        material->SetVec3("u_LightDir", Vec3(0.5f, -1.0f, 0.3f));
+        material->SetVec3("u_LightColor", Vec3(1.0f, 1.0f, 1.0f));
+        material->SetFloat("u_AmbientStrength", 0.2f);
+        
+        // Render state for transparency
+        material->SetBlendMode(BlendMode::Transparent);
+        material->SetRenderQueue(RenderQueue::Transparent);
+        material->SetDepthWrite(false);  // Important for correct transparency
+        material->SetCullMode(CullMode::Off);  // See both sides of glass
+        
+        LOG_INFO("MaterialLibrary", "Created glass material: " + name);
+    }
+    return material;
+}
+
 // ============================================================================
 // Batch Operations
 // ============================================================================

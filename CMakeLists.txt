@@ -85,6 +85,8 @@ set(ENGINE_SOURCES
     src/renderer/mesh/MeshPrimitives.cpp
     src/renderer/material/Material.cpp
     src/renderer/material/MaterialLibrary.cpp
+    src/renderer/texture/Texture2D.cpp
+    src/renderer/texture/TextureLibrary.cpp
     src/renderer/Renderer.cpp
     src/renderer/world/StaticWorldRenderer.cpp
 
@@ -226,6 +228,7 @@ set(ORACULAR_SOURCES
     tools/OracularV2/Gizmo.cpp
     tools/OracularV2/SAUFormat.cpp
     tools/OracularV2/BuildMap.cpp
+    tools/OracularV2/MaterialBrowser.cpp
     tools/OracularV2/tools/BlockTool.cpp
 )
 
@@ -239,6 +242,7 @@ set(ORACULAR_HEADERS
     tools/OracularV2/Gizmo.h
     tools/OracularV2/SAUFormat.h
     tools/OracularV2/BuildMap.h
+    tools/OracularV2/MaterialBrowser.h
     tools/OracularV2/tools/BlockTool.h
 )
 
