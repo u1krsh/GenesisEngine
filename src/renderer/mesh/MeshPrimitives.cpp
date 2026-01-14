@@ -20,54 +20,60 @@ MeshPtr MeshPrimitives::CreateBox(float width, float height, float depth, const 
     float h = height * 0.5f;
     float d = depth * 0.5f;
 
-    MeshBuilder<VertexPNT> builder(name);
+    MeshBuilder<VertexPNTTan> builder(name);
 
-    // Front face (+Z)
+    // Front face (+Z) - Tangent: (1, 0, 0)
     uint32_t base = builder.GetVertexCount();
-    builder.AddVertex(VertexPNT({-w, -h,  d}, { 0,  0,  1}, {0, 0}));
-    builder.AddVertex(VertexPNT({ w, -h,  d}, { 0,  0,  1}, {1, 0}));
-    builder.AddVertex(VertexPNT({ w,  h,  d}, { 0,  0,  1}, {1, 1}));
-    builder.AddVertex(VertexPNT({-w,  h,  d}, { 0,  0,  1}, {0, 1}));
+    Vec3 tFront(1, 0, 0);
+    builder.AddVertex(VertexPNTTan({-w, -h,  d}, { 0,  0,  1}, {0, 0}, tFront));
+    builder.AddVertex(VertexPNTTan({ w, -h,  d}, { 0,  0,  1}, {1, 0}, tFront));
+    builder.AddVertex(VertexPNTTan({ w,  h,  d}, { 0,  0,  1}, {1, 1}, tFront));
+    builder.AddVertex(VertexPNTTan({-w,  h,  d}, { 0,  0,  1}, {0, 1}, tFront));
     builder.AddQuad(base, base+1, base+2, base+3);
 
-    // Back face (-Z)
+    // Back face (-Z) - Tangent: (-1, 0, 0)
     base = builder.GetVertexCount();
-    builder.AddVertex(VertexPNT({ w, -h, -d}, { 0,  0, -1}, {0, 0}));
-    builder.AddVertex(VertexPNT({-w, -h, -d}, { 0,  0, -1}, {1, 0}));
-    builder.AddVertex(VertexPNT({-w,  h, -d}, { 0,  0, -1}, {1, 1}));
-    builder.AddVertex(VertexPNT({ w,  h, -d}, { 0,  0, -1}, {0, 1}));
+    Vec3 tBack(-1, 0, 0);
+    builder.AddVertex(VertexPNTTan({ w, -h, -d}, { 0,  0, -1}, {0, 0}, tBack));
+    builder.AddVertex(VertexPNTTan({-w, -h, -d}, { 0,  0, -1}, {1, 0}, tBack));
+    builder.AddVertex(VertexPNTTan({-w,  h, -d}, { 0,  0, -1}, {1, 1}, tBack));
+    builder.AddVertex(VertexPNTTan({ w,  h, -d}, { 0,  0, -1}, {0, 1}, tBack));
     builder.AddQuad(base, base+1, base+2, base+3);
 
-    // Top face (+Y)
+    // Top face (+Y) - Tangent: (1, 0, 0)
     base = builder.GetVertexCount();
-    builder.AddVertex(VertexPNT({-w,  h,  d}, { 0,  1,  0}, {0, 0}));
-    builder.AddVertex(VertexPNT({ w,  h,  d}, { 0,  1,  0}, {1, 0}));
-    builder.AddVertex(VertexPNT({ w,  h, -d}, { 0,  1,  0}, {1, 1}));
-    builder.AddVertex(VertexPNT({-w,  h, -d}, { 0,  1,  0}, {0, 1}));
+    Vec3 tTop(1, 0, 0);
+    builder.AddVertex(VertexPNTTan({-w,  h,  d}, { 0,  1,  0}, {0, 0}, tTop));
+    builder.AddVertex(VertexPNTTan({ w,  h,  d}, { 0,  1,  0}, {1, 0}, tTop));
+    builder.AddVertex(VertexPNTTan({ w,  h, -d}, { 0,  1,  0}, {1, 1}, tTop));
+    builder.AddVertex(VertexPNTTan({-w,  h, -d}, { 0,  1,  0}, {0, 1}, tTop));
     builder.AddQuad(base, base+1, base+2, base+3);
 
-    // Bottom face (-Y)
+    // Bottom face (-Y) - Tangent: (1, 0, 0)
     base = builder.GetVertexCount();
-    builder.AddVertex(VertexPNT({-w, -h, -d}, { 0, -1,  0}, {0, 0}));
-    builder.AddVertex(VertexPNT({ w, -h, -d}, { 0, -1,  0}, {1, 0}));
-    builder.AddVertex(VertexPNT({ w, -h,  d}, { 0, -1,  0}, {1, 1}));
-    builder.AddVertex(VertexPNT({-w, -h,  d}, { 0, -1,  0}, {0, 1}));
+    Vec3 tBottom(1, 0, 0);
+    builder.AddVertex(VertexPNTTan({-w, -h, -d}, { 0, -1,  0}, {0, 0}, tBottom));
+    builder.AddVertex(VertexPNTTan({ w, -h, -d}, { 0, -1,  0}, {1, 0}, tBottom));
+    builder.AddVertex(VertexPNTTan({ w, -h,  d}, { 0, -1,  0}, {1, 1}, tBottom));
+    builder.AddVertex(VertexPNTTan({-w, -h,  d}, { 0, -1,  0}, {0, 1}, tBottom));
     builder.AddQuad(base, base+1, base+2, base+3);
 
-    // Right face (+X)
+    // Right face (+X) - Tangent: (0, 0, -1)
     base = builder.GetVertexCount();
-    builder.AddVertex(VertexPNT({ w, -h,  d}, { 1,  0,  0}, {0, 0}));
-    builder.AddVertex(VertexPNT({ w, -h, -d}, { 1,  0,  0}, {1, 0}));
-    builder.AddVertex(VertexPNT({ w,  h, -d}, { 1,  0,  0}, {1, 1}));
-    builder.AddVertex(VertexPNT({ w,  h,  d}, { 1,  0,  0}, {0, 1}));
+    Vec3 tRight(0, 0, -1);
+    builder.AddVertex(VertexPNTTan({ w, -h,  d}, { 1,  0,  0}, {0, 0}, tRight));
+    builder.AddVertex(VertexPNTTan({ w, -h, -d}, { 1,  0,  0}, {1, 0}, tRight));
+    builder.AddVertex(VertexPNTTan({ w,  h, -d}, { 1,  0,  0}, {1, 1}, tRight));
+    builder.AddVertex(VertexPNTTan({ w,  h,  d}, { 1,  0,  0}, {0, 1}, tRight));
     builder.AddQuad(base, base+1, base+2, base+3);
 
-    // Left face (-X)
+    // Left face (-X) - Tangent: (0, 0, 1)
     base = builder.GetVertexCount();
-    builder.AddVertex(VertexPNT({-w, -h, -d}, {-1,  0,  0}, {0, 0}));
-    builder.AddVertex(VertexPNT({-w, -h,  d}, {-1,  0,  0}, {1, 0}));
-    builder.AddVertex(VertexPNT({-w,  h,  d}, {-1,  0,  0}, {1, 1}));
-    builder.AddVertex(VertexPNT({-w,  h, -d}, {-1,  0,  0}, {0, 1}));
+    Vec3 tLeft(0, 0, 1);
+    builder.AddVertex(VertexPNTTan({-w, -h, -d}, {-1,  0,  0}, {0, 0}, tLeft));
+    builder.AddVertex(VertexPNTTan({-w, -h,  d}, {-1,  0,  0}, {1, 0}, tLeft));
+    builder.AddVertex(VertexPNTTan({-w,  h,  d}, {-1,  0,  0}, {1, 1}, tLeft));
+    builder.AddVertex(VertexPNTTan({-w,  h, -d}, {-1,  0,  0}, {0, 1}, tLeft));
     builder.AddQuad(base, base+1, base+2, base+3);
 
     return builder.Build();
@@ -83,7 +89,7 @@ MeshPtr MeshPrimitives::CreatePlane(float width, float depth, const std::string&
 
 MeshPtr MeshPrimitives::CreatePlane(float width, float depth, uint32_t subdivX, uint32_t subdivZ,
                                     const std::string& name) {
-    MeshBuilder<VertexPNT> builder(name);
+    MeshBuilder<VertexPNTTan> builder(name);
 
     float halfW = width * 0.5f;
     float halfD = depth * 0.5f;
@@ -94,6 +100,8 @@ MeshPtr MeshPrimitives::CreatePlane(float width, float depth, uint32_t subdivX, 
     float uvStepZ = 1.0f / subdivZ;
 
     // Generate vertices
+    Vec3 tangent(1, 0, 0); // Always (1,0,0) for flat plane with U along X
+    
     for (uint32_t z = 0; z <= subdivZ; ++z) {
         for (uint32_t x = 0; x <= subdivX; ++x) {
             float px = -halfW + x * stepX;
@@ -101,7 +109,7 @@ MeshPtr MeshPrimitives::CreatePlane(float width, float depth, uint32_t subdivX, 
             float u = x * uvStepX;
             float v = z * uvStepZ;
 
-            builder.AddVertex(VertexPNT({px, 0, pz}, {0, 1, 0}, {u, v}));
+            builder.AddVertex(VertexPNTTan({px, 0, pz}, {0, 1, 0}, {u, v}, tangent));
         }
     }
 

@@ -6,6 +6,10 @@ in vec2 v_TexCoord;
 
 out vec4 FragColor;
 
+// Texture - sampled for albedo color
+uniform sampler2D u_BaseTexture;
+uniform bool u_HasBaseTexture;
+
 uniform vec3 u_Color;
 uniform vec3 u_LightDir;
 uniform vec3 u_LightColor;
@@ -28,16 +32,25 @@ uniform PointLight u_PointLights[MAX_POINT_LIGHTS];
 
 void main()
 {
+    // Get base color - from texture if available, otherwise use u_Color
+    vec3 baseColor;
+    if (u_HasBaseTexture) {
+        vec4 texColor = texture(u_BaseTexture, v_TexCoord);
+        baseColor = texColor.rgb * u_Color;
+    } else {
+        baseColor = u_Color;
+    }
+
     // Normalize inputs
     vec3 normal = normalize(v_Normal);
     vec3 lightDir = normalize(u_LightDir); // Directional light
 
     // 1. Ambient
-    vec3 ambient = u_AmbientColor * u_Color;
+    vec3 ambient = u_AmbientColor * baseColor;
 
     // 2. Directional Light (Diffuse)
     float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = u_LightColor * diff * u_Color;
+    vec3 diffuse = u_LightColor * diff * baseColor;
 
     vec3 finalColor = ambient + diffuse;
 
@@ -55,7 +68,7 @@ void main()
             float attenuation = 1.0 / (u_PointLights[i].constant + u_PointLights[i].linear * distance + u_PointLights[i].quadratic * (distance * distance));
             
             // Combine
-            vec3 pColor = u_PointLights[i].color * pDiff * u_Color * attenuation;
+            vec3 pColor = u_PointLights[i].color * pDiff * baseColor * attenuation;
             finalColor += pColor;
         }
     }

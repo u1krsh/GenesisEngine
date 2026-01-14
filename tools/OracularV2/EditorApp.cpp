@@ -9,79 +9,82 @@
 #include "SelectionManager.h"
 #include "Gizmo.h"
 #include "tools/BlockTool.h"
+#include "TextureBrowser.h"
 #include "BuildMap.h"
-#include "MaterialBrowser.h"
-
-#include "map/Map.h"
+#include "imgui.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
+#include "imgui_internal.h"
 #include "map/MapLoader.h"
 #include "SAUFormat.h"
-
-#include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
-#include <imgui_internal.h>
-
 #include <iostream>
-#include <algorithm>
-#include <fstream>
-#include <cstring>
-#include <sstream>
 
-// ============================================================================
-// Constructor / Destructor
-// ============================================================================
+// Constructor
+EditorApp::EditorApp() 
+    : m_window(nullptr)
+    , m_running(false)
+    , m_firstFrame(true)
+    , m_mapModified(false)
+    , m_currentTool(EditorTool::Select)
+    , m_entityPaletteType(EntityPaletteType::Light)
+    , m_statusBarHeight(24.0f)
+    , m_textureBrowserForMaterial(true)
+{
+}
 
-EditorApp::EditorApp() = default;
-
+// Destructor
 EditorApp::~EditorApp() {
     Shutdown();
 }
 
-// ============================================================================
-// Initialization
-// ============================================================================
-
 bool EditorApp::Initialize(int width, int height, const char* title) {
     // Initialize GLFW
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW\n";
+        std::cerr << "Failed to initialize GLFW" << std::endl;
         return false;
     }
-
-    // OpenGL 3.3 Core
+    
+    // Configure OpenGL context
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
-
+    glfwWindowHint(GLFW_SAMPLES, 4);  // MSAA
+    
     // Create window
     m_window = glfwCreateWindow(width, height, title, nullptr, nullptr);
     if (!m_window) {
-        std::cerr << "Failed to create GLFW window\n";
+        std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
         return false;
     }
-
+    
     glfwMakeContextCurrent(m_window);
-    glfwSwapInterval(1); // VSync
-
-    // Load OpenGL with GLAD
+    glfwSwapInterval(1);  // V-sync
+    
+    // Initialize GLAD
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        std::cerr << "Failed to initialize GLAD\n";
+        std::cerr << "Failed to initialize GLAD" << std::endl;
+        glfwDestroyWindow(m_window);
+        glfwTerminate();
         return false;
     }
-
-    std::cout << "OpenGL " << glGetString(GL_VERSION) << "\n";
-
+    
+    // OpenGL settings
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_MULTISAMPLE);
+    
     // Initialize ImGui
     InitImGui();
-
-    // Create editor systems
+    
+    // Initialize editor subsystems
     m_grid = std::make_unique<Grid>();
     m_viewportLayout = std::make_unique<ViewportLayout>();
     m_selection = std::make_unique<SelectionManager>();
     m_gizmo = std::make_unique<Gizmo>();
     m_blockTool = std::make_unique<BlockTool>();
+    m_textureBrowser = std::make_unique<TextureBrowser>();
 
     // Try to load the demo map - SAU first (editor native), then JSON
     if (!LoadMap("assets/maps/moody_demo.sau")) {
@@ -232,6 +235,7 @@ void EditorApp::SetupDockingLayout() {
 void EditorApp::Shutdown() {
     if (!m_running && !m_window) return;
     
+    m_textureBrowser.reset();
     m_blockTool.reset();
     m_gizmo.reset();
     m_selection.reset();
@@ -322,9 +326,6 @@ void EditorApp::Run() {
             RenderBuildOutput();
         }
         
-        // Material Browser
-        MaterialBrowser::Instance().Render();
-        
         // Demo window for development
         if (m_showDemoWindow) {
             ImGui::ShowDemoWindow(&m_showDemoWindow);
@@ -408,10 +409,6 @@ void EditorApp::RenderMenuBar() {
         }
         
         if (ImGui::BeginMenu("View")) {
-            if (ImGui::MenuItem("Material Browser", "M")) {
-                MaterialBrowser::Instance().Toggle();
-            }
-            ImGui::Separator();
             if (ImGui::MenuItem("Reset Layout")) {
                 m_firstFrame = true;  // Re-setup layout
             }
@@ -615,8 +612,103 @@ void EditorApp::RenderPropertiesPanel() {
                 if (changed) m_mapModified = true;
                 
                 ImGui::Separator();
+                
+                // ====================================================================
+                // Material / Texture Selection
+                // ====================================================================
+                ImGui::Text("Texture");
+                
+                // Thumbnail preview
+                if (m_textureBrowser) {
+                    // Try to show current texture thumbnail
+                    // In a real engine, we'd use the texture system. Here we use the browser's simplified cache or placeholder
+                    // For now, just a button with the name
+                    if (ImGui::Button(brush->brush.materialName.c_str(), ImVec2(-1, 0))) {
+                        // Open texture browser for base material
+                        m_textureBrowserForMaterial = true;
+                        m_textureBrowser->Open(brush->brush.materialName);
+                        
+                        // Set callback
+                        m_textureBrowser->SetSelectCallback([this, brush](const std::string& texture) {
+                            brush->brush.materialName = texture;
+                            
+                            // Auto-set normal map if it exists
+                            // Assume standard naming like "glass/window01.png" -> "glass/window01_normal.png"
+                            std::string base = texture.substr(0, texture.find_last_of('.'));
+                            std::string ext = texture.substr(texture.find_last_of('.'));
+                            std::string normalPath = base + "_normal" + ext;
+                            
+                            // TODO: Verify file existence before setting?
+                            // For now just set the path suggestion
+                            brush->brush.normalMapPath = normalPath;
+                            
+                            m_mapModified = true;
+                        });
+                    }
+                } else {
+                    char matBuf[128];
+                    strncpy(matBuf, brush->brush.materialName.c_str(), sizeof(matBuf) - 1);
+                    matBuf[sizeof(matBuf) - 1] = '\0';
+                    if (ImGui::InputText("##Material", matBuf, sizeof(matBuf))) {
+                        brush->brush.materialName = matBuf;
+                        changed = true;
+                    }
+                }
+                
+                ImGui::Spacing();
+                
+                // ====================================================================
+                // Shader Selection
+                // ====================================================================
+                ImGui::Text("Shader");
+                // Shader selection
+        const char* shaderTypeStr = Genesis::ShaderTypeToString(brush->brush.shaderType);
+        if (ImGui::BeginCombo("Shader Type", shaderTypeStr)) {
+            for (int i = 0; i <= (int)Genesis::ShaderType::Unlit; i++) {
+                auto type = (Genesis::ShaderType)i;
+                bool isSelected = (brush->brush.shaderType == type);
+                if (ImGui::Selectable(Genesis::ShaderTypeToString(type), isSelected)) {
+                    brush->brush.shaderType = type;
+                    m_mapModified = true;
+                }
+                if (isSelected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        // Shader-specific properties
+        if (brush->brush.shaderType == Genesis::ShaderType::Glass) {
+                    ImGui::Indent();
+                    ImGui::TextDisabled("Glass Properties");
+                    
+                    if (ImGui::SliderFloat("Transparency", &brush->brush.transparency, 0.0f, 1.0f)) changed = true;
+                    if (ImGui::SliderFloat("Fresnel Power", &brush->brush.fresnelPower, 0.1f, 10.0f)) changed = true;
+                    if (ImGui::SliderFloat("Roughness", &brush->brush.roughness, 0.0f, 1.0f)) changed = true;
+                    
+                    // Normal map button
+                    std::string btnText = brush->brush.normalMapPath.empty() ? "Select Normal Map" : "Normal Map: " + brush->brush.normalMapPath;
+                    if (ImGui::Button(btnText.c_str())) {
+                         m_textureBrowserForMaterial = false;
+                         // ... logic ...
+                    }
+                    ImGui::Unindent();
+                    }
+                else if (brush->brush.shaderType == Genesis::ShaderType::Metal) {
+                    ImGui::Indent();
+                    ImGui::TextDisabled("Metal Properties");
+                    if (ImGui::SliderFloat("Roughness", &brush->brush.roughness, 0.0f, 1.0f)) changed = true;
+                    if (ImGui::SliderFloat("Metallic", &brush->brush.metallic, 0.0f, 1.0f)) changed = true;
+                    ImGui::Unindent();
+                }
+                
+                ImGui::Separator();
                 if (ImGui::Button("Delete Brush", ImVec2(-1, 0))) {
                     DeleteSelectedBrushes();
+                    // Don't access brush after this!
+                } else {
+                    // Safe to render browser modal here if needed, or in main loop
+                    // The browser renders itself as a popup so it needs to be called in the UI hierarchy
+                    if (m_textureBrowser) m_textureBrowser->Render();
                 }
             }
         }

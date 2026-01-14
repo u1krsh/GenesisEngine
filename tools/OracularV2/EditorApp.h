@@ -28,6 +28,7 @@ class ViewportLayout;
 class SelectionManager;
 class Gizmo;
 class BlockTool;
+class TextureBrowser;
 
 // ============================================================================
 // Editor Tool Types
@@ -136,6 +137,10 @@ private:
     std::unique_ptr<SelectionManager> m_selection;
     std::unique_ptr<Gizmo> m_gizmo;
     std::unique_ptr<BlockTool> m_blockTool;
+    std::unique_ptr<TextureBrowser> m_textureBrowser;
+    
+    // Texture browser state
+    bool m_textureBrowserForMaterial = true;  // true = material, false = normal map
     
     // Editor brushes (the actual brush data for editing)
     std::vector<EditorBrush> m_editorBrushes;

@@ -153,6 +153,23 @@ std::unique_ptr<Genesis::Map> Load(const std::string& path) {
                 currentBrush.materialName = value;
             } else if (key == "shape") {
                 currentBrush.shape = Genesis::StringToBrushShape(value);
+            } else if (key == "shader_type") {
+                currentBrush.shaderType = Genesis::StringToShaderType(value);
+            } else if (key == "normal_map") {
+                currentBrush.normalMapPath = value;
+            } else if (key == "mask_map") {
+                currentBrush.maskMapPath = value;
+            } else if (key == "transparency") {
+                currentBrush.transparency = std::stof(value);
+            } else if (key == "fresnel_power") {
+                currentBrush.fresnelPower = std::stof(value);
+            } else if (key == "roughness") {
+                currentBrush.roughness = std::stof(value);
+            } else if (key == "metallic") {
+                currentBrush.metallic = std::stof(value);
+            } else if (key == "tint_color") {
+                std::istringstream ss(value);
+                ss >> currentBrush.tintColor.r >> currentBrush.tintColor.g >> currentBrush.tintColor.b;
             } else if (key == "flags") {
                 if (value.find("nocollision") != std::string::npos)
                     currentBrush.flags = currentBrush.flags | Genesis::BrushFlags::NoCollision;
@@ -216,6 +233,34 @@ bool Save(const Genesis::Map& map, const std::string& path) {
         }
         file << "    shape = " << Genesis::BrushShapeToString(brush.shape) << "\n";
         file << "    material = " << brush.materialName << "\n";
+        
+        // Shader type (always save, even if standard)
+        file << "    shader_type = " << Genesis::ShaderTypeToString(brush.shaderType) << "\n";
+        
+        // Texture paths
+        if (!brush.normalMapPath.empty()) {
+            file << "    normal_map = " << brush.normalMapPath << "\n";
+        }
+        if (!brush.maskMapPath.empty()) {
+            file << "    mask_map = " << brush.maskMapPath << "\n";
+        }
+        
+        // Material properties (save if non-default)
+        if (brush.shaderType == Genesis::ShaderType::Glass || brush.transparency != 0.3f) {
+            file << "    transparency = " << brush.transparency << "\n";
+        }
+        if (brush.shaderType == Genesis::ShaderType::Glass || brush.fresnelPower != 2.0f) {
+            file << "    fresnel_power = " << brush.fresnelPower << "\n";
+        }
+        if (brush.roughness != 0.1f) {
+            file << "    roughness = " << brush.roughness << "\n";
+        }
+        if (brush.metallic != 0.0f) {
+            file << "    metallic = " << brush.metallic << "\n";
+        }
+        if (brush.tintColor != Genesis::Vec3(1.0f)) {
+            file << "    tint_color = " << brush.tintColor.r << " " << brush.tintColor.g << " " << brush.tintColor.b << "\n";
+        }
         
         // Flags
         std::string flags;

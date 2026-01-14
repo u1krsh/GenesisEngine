@@ -16,11 +16,17 @@ struct EditorBrush {
     // The actual engine brush data
     Genesis::Brush brush;
     
-    // Editor-only state (not saved to file)
+    // Editor-only state
+    // Selection state
     bool isSelected = false;
     bool isHovered = false;
+    
+    // Editor visibility
     bool isVisible = true;
-    bool isLocked = false;
+    
+    // Helper to get shader type (convenience)
+    Genesis::ShaderType GetShaderType() const { return brush.shaderType; }
+    void SetShaderType(Genesis::ShaderType type) { brush.shaderType = type; }
     
     // Per-face materials (for future CSG)
     std::array<std::string, 6> faceMaterials = {

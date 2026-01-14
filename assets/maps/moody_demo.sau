@@ -11,110 +11,121 @@ brush {
     position = 0 -2 0
     size = 64 4 64
     shape = cube
-    material = stone
+    material = glass/glassblock001a.png
+    shader_type = standard
 }
 
 brush {
     position = 0 20 0
     size = 64 4 64
     shape = cube
-    material = ceiling
+    material = glass/glassblock001a.png
+    shader_type = standard
 }
 
 brush {
     position = -34 10 0
     size = 4 24 64
     shape = cube
-    material = brick
+    material = glass/glassmirror001a.png
+    shader_type = standard
 }
 
 brush {
     position = 34 10 0
     size = 4 24 64
     shape = cube
-    material = brick
+    material = glass/glassmirror001a.png
+    shader_type = standard
 }
 
 brush {
     position = 0 10 -34
     size = 64 24 4
     shape = cube
-    material = brick
+    material = glass/glassmirror001a.png
+    shader_type = standard
 }
 
 brush {
     position = 0 10 34
     size = 64 24 4
     shape = cube
-    material = brick
+    material = glass/glassmirror001a.png
+    shader_type = standard
 }
 
 brush {
     position = -15 5 -15
     size = 4 10 4
     shape = cube
-    material = metal
+    material = glass/glasswindow008a.png
+    shader_type = glass
+    transparency = 0.5
+    fresnel_power = 2.0
+    normal_map = glass/glasswindow008a_normal.png
 }
 
 brush {
     position = 15 5 15
     size = 4 10 4
     shape = cube
-    material = metal
+    material = glass/glasswindow013a.png
+    shader_type = glass
+    transparency = 0.5
+    fresnel_power = 2.0
+    normal_map = glass/glasswindow013a_normal.png
 }
 
 brush {
     position = 15 5 -15
     size = 4 10 4
     shape = cube
-    material = metal
+    material = glass/glasswindow001a.png
+    shader_type = glass
+    transparency = 0.5
+    fresnel_power = 2.0
+    normal_map = glass/glasswindow001a_normal.png
 }
 
 brush {
     position = -15 5 15
     size = 4 10 4
     shape = cube
-    material = metal
+    material = glass/glassclock001a.png
+    shader_type = standard
 }
 
 brush {
     position = 0 2 0
     size = 8 4 8
     shape = cube
-    material = wood
+    material = glass/glassblock001a.png
+    shader_type = standard
 }
 
 entity {
     classname = light
     position = 8.42224 6.68165 -12.8958
-    color_r = "255"
-    color_g = "255"
-    color_b = "255"
-    radius = "165.000000"
-    intensity = "100.000000"
     color = "0 245 255"
+    intensity = "100.000000"
+    radius = "165.000000"
 }
 
 entity {
     classname = light
     position = 8.30118 6.87263 12.6673
-    color_r = "255"
-    color_g = "255"
-    color_b = "255"
-    radius = "200.000000"
-    intensity = "100.000000"
     color = "82 255 0"
+    intensity = "100.000000"
+    radius = "200.000000"
 }
 
 entity {
     classname = light
     position = -8 7.59921 16
-    color_r = "255"
-    color_g = "255"
-    color_b = "255"
-    radius = "200.000000"
-    intensity = "150.000000"
     color = "0 14 255"
+    intensity = "150.000000"
+    radius = "200.000000"
 }
 
 entity {
@@ -126,10 +137,6 @@ entity {
     classname = light
     position = -7.78653 7.03359 -14.2211
     color = "255 0 0"
-    intensity = "500.000000"
     radius = "200.000000"
-    color_b = "255"
-    color_g = "255"
-    color_r = "255"
+    intensity = "500.000000"
 }
-

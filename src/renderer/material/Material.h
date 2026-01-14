@@ -44,6 +44,43 @@ enum class CullMode {
 };
 
 // ============================================================================
+// Shader Type - Different rendering modes for brushes/materials
+// ============================================================================
+enum class ShaderType {
+    Standard,   // Default opaque rendering
+    Glass,      // Transparent with fresnel, normal mapping
+    Metal,      // High reflectivity PBR
+    Emissive,   // Self-illuminated surfaces
+    Water,      // Animated water surface (future)
+    Skybox,     // Background skybox
+    Unlit       // No lighting, just texture color
+};
+
+inline const char* ShaderTypeToString(ShaderType type) {
+    switch (type) {
+        case ShaderType::Standard: return "standard";
+        case ShaderType::Glass:    return "glass";
+        case ShaderType::Metal:    return "metal";
+        case ShaderType::Emissive: return "emissive";
+        case ShaderType::Water:    return "water";
+        case ShaderType::Skybox:   return "skybox";
+        case ShaderType::Unlit:    return "unlit";
+        default:                   return "standard";
+    }
+}
+
+inline ShaderType StringToShaderType(const std::string& str) {
+    if (str == "standard") return ShaderType::Standard;
+    if (str == "glass")    return ShaderType::Glass;
+    if (str == "metal")    return ShaderType::Metal;
+    if (str == "emissive") return ShaderType::Emissive;
+    if (str == "water")    return ShaderType::Water;
+    if (str == "skybox")   return ShaderType::Skybox;
+    if (str == "unlit")    return ShaderType::Unlit;
+    return ShaderType::Standard;
+}
+
+// ============================================================================
 // Material - Defines visual properties for rendering
 //
 // A Material references a Shader and holds property values (colors, textures,
@@ -74,6 +111,9 @@ public:
     void SetShader(std::shared_ptr<Shader> shader);
     std::shared_ptr<Shader> GetShader() const { return m_shader; }
     bool HasShader() const { return m_shader != nullptr && m_shader->IsValid(); }
+
+    void SetShaderType(ShaderType type) { m_shaderType = type; }
+    ShaderType GetShaderType() const { return m_shaderType; }
 
     // ========================================================================
     // Property Setters - Set uniform values by name
@@ -188,6 +228,7 @@ public:
 private:
     std::string m_name;
     std::shared_ptr<Shader> m_shader;
+    ShaderType m_shaderType = ShaderType::Standard;
 
     // Material properties (uniform values)
     std::unordered_map<std::string, MaterialProperty> m_properties;

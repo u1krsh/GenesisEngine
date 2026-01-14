@@ -1,12 +1,13 @@
 #include "BSPTree.h"
 #include "camera/Camera.h"
 #include "renderer/shader/Shader.h"
+#include "renderer/texture/Texture2D.h"
 #include "core/Logger.h"
 #include <glad/glad.h>
 #include <iostream>
-#include <iostream>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 #include "math/Frustum.h"
 
 namespace Genesis {
@@ -466,20 +467,51 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
 
     m_lastFrameFaces++;
 
-    // Set material color on the shader (don't call mat->Bind() as it would change the shader!)
+    // Set material color and texture on the shader
+    bool hasTexture = false;
     if (face.materialIndex < m_materials.size()) {
-        MaterialPtr mat = MaterialLibrary::Instance().Get(m_materials[face.materialIndex].name);
+        const std::string& matName = m_materials[face.materialIndex].name;
+        MaterialPtr mat = MaterialLibrary::Instance().Get(matName);
         if (mat) {
             // Get the color from the material and set it on the BSP shader
-            Vec3 color = mat->GetVec3("u_Color", Vec3(0.5f, 0.5f, 0.5f));
+            Vec3 color = mat->GetVec3("u_Color", Vec3(1.0f, 1.0f, 1.0f));
             shader.SetVec3("u_Color", color);
+            
+            // Get and bind texture if available
+            const TextureSlot* texSlot = mat->GetTextureSlot("u_BaseTexture");
+            if (texSlot && texSlot->texture) {
+                texSlot->texture->Bind(0);
+                hasTexture = true;
+                // Debug: Log first time this material's texture is bound
+                static std::unordered_set<std::string> loggedMats;
+                if (loggedMats.find(matName) == loggedMats.end()) {
+                    LOG_INFO("BSPTree", "DrawFace: Binding texture for material '" + matName + "'");
+                    loggedMats.insert(matName);
+                }
+            } else {
+                // Debug: Log missing texture
+                static std::unordered_set<std::string> loggedMissing;
+                if (loggedMissing.find(matName) == loggedMissing.end()) {
+                    LOG_WARNING("BSPTree", "DrawFace: Material '" + matName + "' has no u_BaseTexture");
+                    loggedMissing.insert(matName);
+                }
+            }
         } else {
-            // Default gray color
-            shader.SetVec3("u_Color", Vec3(0.5f, 0.5f, 0.5f));
+            // Debug: Log material not found
+            static std::unordered_set<std::string> loggedNotFound;
+            if (loggedNotFound.find(matName) == loggedNotFound.end()) {
+                LOG_WARNING("BSPTree", "DrawFace: Material '" + matName + "' not found in MaterialLibrary");
+                loggedNotFound.insert(matName);
+            }
+            // Default white color
+            shader.SetVec3("u_Color", Vec3(1.0f, 1.0f, 1.0f));
         }
     } else {
-        shader.SetVec3("u_Color", Vec3(0.5f, 0.5f, 0.5f));
+        shader.SetVec3("u_Color", Vec3(1.0f, 1.0f, 1.0f));
     }
+    
+    // Set hasDiffuseTexture uniform
+    shader.SetInt("hasDiffuseTexture", hasTexture ? 1 : 0);
 
     // Draw the face
     glBindVertexArray(m_vao);

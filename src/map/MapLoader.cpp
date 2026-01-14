@@ -1,4 +1,7 @@
 #include "MapLoader.h"
+#include "renderer/material/MaterialLibrary.h"
+#include "renderer/texture/TextureLibrary.h"
+#include "map/MeshLibrary.h"
 #include "core/Logger.h"
 #include <fstream>
 #include <sstream>
@@ -188,13 +191,7 @@ MapLoader::MapLoader() {
 MapPtr MapLoader::Load(const std::string& filepath, bool skipBuild) {
     ClearError();
 
-    // Check if filepath is already absolute (starts with / on Linux)
-    std::string fullPath;
-    if (!filepath.empty() && filepath[0] == '/') {
-        fullPath = filepath;  // Already absolute, use as-is
-    } else {
-        fullPath = m_basePath + filepath;
-    }
+    std::string fullPath = m_basePath + filepath;
 
     // Detect format by extension
     size_t dotPos = filepath.rfind('.');
@@ -202,28 +199,16 @@ MapPtr MapLoader::Load(const std::string& filepath, bool skipBuild) {
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
     std::cout << "Loaded map: " << filepath << std::endl;
-    MapPtr map = nullptr;
     if (ext == ".json") {
-        map = LoadJSON(fullPath, skipBuild);
+        return LoadJSON(fullPath, skipBuild);
     } else if (ext == ".sau") {
-        map = LoadSAU(fullPath, skipBuild);
+        return LoadSAU(fullPath, skipBuild);
     } else if (ext == ".map" || ext == ".txt") {
-        map = LoadSimple(fullPath, skipBuild);
+        return LoadSimple(fullPath, skipBuild);
     } else {
         // Default to JSON
-        map = LoadJSON(fullPath, skipBuild);
+        return LoadJSON(fullPath, skipBuild);
     }
-
-    if (map) {
-        // If map has no name (or default Untitled), set it to the filename
-        if (map->GetName() == "Untitled" || map->GetName().empty()) {
-            size_t lastSlash = filepath.find_last_of("/\\");
-            std::string filename = (lastSlash != std::string::npos) ? filepath.substr(lastSlash + 1) : filepath;
-            map->SetName(filename);
-        }
-    }
-
-    return map;
 }
 
 MapPtr MapLoader::LoadJSON(const std::string& filepath, bool skipBuild) {
@@ -387,6 +372,20 @@ bool MapLoader::ParseJSONBrush(const std::string& json, Brush& brush) {
     if (brush.materialName.empty()) {
         brush.materialName = m_defaultMaterial;
     }
+    
+    // Shader
+    std::string shaderStr = ExtractString(json, "shader");
+    if (!shaderStr.empty()) {
+        brush.shaderType = StringToShaderType(shaderStr);
+        
+        // Load shader specific properties
+        brush.transparency = ExtractNumber(json, "transparency", 0.3f);
+        brush.fresnelPower = ExtractNumber(json, "fresnel", 2.0f);
+        brush.roughness = ExtractNumber(json, "roughness", 0.1f);
+        
+        brush.normalMapPath = ExtractString(json, "normal_map");
+        brush.maskMapPath = ExtractString(json, "mask_map");
+    }
 
     // Name and layer
     brush.name = ExtractString(json, "name");
@@ -487,49 +486,143 @@ void MapLoader::BuildBrush(Brush& brush) {
 
     // Get material from library
     auto& matLib = MaterialLibrary::Instance();
+    // Get material from library or create if missing
     brush.material = matLib.Get(brush.materialName);
 
-    // If material not found, create a default one
+    // If material not found, try to create from texture or fallback to color
     if (!brush.material) {
-        // Create a simple colored material based on material name
-        Vec3 color(0.5f, 0.5f, 0.5f); // Default gray
-
-        // Some common material name to color mappings
-        std::string matName = brush.materialName;
-        std::transform(matName.begin(), matName.end(), matName.begin(), ::tolower);
-
-        if (matName == "floor" || matName == "ground") {
-            color = Vec3(0.3f, 0.3f, 0.35f);
-        } else if (matName == "wall") {
-            color = Vec3(0.6f, 0.55f, 0.5f);
-        } else if (matName == "ceiling") {
-            color = Vec3(0.7f, 0.7f, 0.75f);
-        } else if (matName == "brick") {
-            color = Vec3(0.6f, 0.3f, 0.2f);
-        } else if (matName == "concrete" || matName == "cement") {
-            color = Vec3(0.5f, 0.5f, 0.5f);
-        } else if (matName == "wood") {
-            color = Vec3(0.5f, 0.35f, 0.2f);
-        } else if (matName == "metal") {
-            color = Vec3(0.6f, 0.6f, 0.65f);
-        } else if (matName == "grass") {
-            color = Vec3(0.2f, 0.5f, 0.2f);
-        } else if (matName == "water") {
-            color = Vec3(0.2f, 0.4f, 0.7f);
-        } else if (matName == "red") {
-            color = Vec3(0.7f, 0.2f, 0.2f);
-        } else if (matName == "green") {
-            color = Vec3(0.2f, 0.7f, 0.2f);
-        } else if (matName == "blue") {
-            color = Vec3(0.2f, 0.2f, 0.7f);
-        } else if (matName == "white") {
-            color = Vec3(0.9f, 0.9f, 0.9f);
-        } else if (matName == "black") {
-            color = Vec3(0.1f, 0.1f, 0.1f);
+        // Try to load as texture
+        auto& texLib = TextureLibrary::Instance();
+        // Check if it's a file path (has extension)
+        bool isFilePath = brush.materialName.find('.') != std::string::npos;
+        
+        if (isFilePath) {
+            auto texture = texLib.Load(brush.materialName);
+            if (texture) {
+                // Texture found! Create material based on shader type
+                if (brush.shaderType == ShaderType::Glass) {
+                     brush.material = matLib.CreateGlass(brush.materialName, brush.tintColor, 1.0f - brush.transparency);
+                } else {
+                     brush.material = matLib.CreateFromTemplate(brush.materialName, "LitOpaque");
+                }
+                
+                if (brush.material) {
+                    brush.material->SetTexture("u_BaseTexture", texture, 0);
+                    brush.material->SetInt("u_HasBaseTexture", 1);
+                }
+            }
         }
-
-        brush.material = matLib.CreateSolidColor(brush.materialName, color);
-        LOG_DEBUG("MapLoader", "Created material '" + brush.materialName + "'");
+        
+        // If still no material (not a texture or load failed), create solid color
+        if (!brush.material) {
+            // Create a simple colored material based on material name
+            Vec3 color(0.5f, 0.5f, 0.5f); // Default gray
+    
+            // Some common material name to color mappings
+            std::string matName = brush.materialName;
+            std::transform(matName.begin(), matName.end(), matName.begin(), ::tolower);
+    
+            if (matName == "floor" || matName == "ground") {
+                color = Vec3(0.3f, 0.3f, 0.35f);
+            } else if (matName == "wall") {
+                color = Vec3(0.6f, 0.55f, 0.5f);
+            } else if (matName == "ceiling") {
+                color = Vec3(0.7f, 0.7f, 0.75f);
+            } else if (matName == "brick") {
+                color = Vec3(0.6f, 0.3f, 0.2f);
+            } else if (matName == "concrete" || matName == "cement") {
+                color = Vec3(0.5f, 0.5f, 0.5f);
+            } else if (matName == "wood") {
+                color = Vec3(0.5f, 0.35f, 0.2f);
+            } else if (matName == "metal") {
+                color = Vec3(0.6f, 0.6f, 0.65f);
+            } else if (matName == "grass") {
+                color = Vec3(0.2f, 0.5f, 0.2f);
+            } else if (matName == "water") {
+                color = Vec3(0.2f, 0.4f, 0.7f);
+            } else if (matName == "red") {
+                color = Vec3(0.7f, 0.2f, 0.2f);
+            } else if (matName == "green") {
+                color = Vec3(0.2f, 0.7f, 0.2f);
+            } else if (matName == "blue") {
+                color = Vec3(0.2f, 0.2f, 0.7f);
+            } else if (matName == "white") {
+                color = Vec3(0.9f, 0.9f, 0.9f);
+            } else if (matName == "black") {
+                color = Vec3(0.1f, 0.1f, 0.1f);
+            }
+    
+            brush.material = matLib.CreateSolidColor(brush.materialName, color);
+            LOG_DEBUG("MapLoader", "Created material '" + brush.materialName + "'");
+        }
+    }
+    
+    // Validate material exists now
+    if (brush.material) {
+        // Set shader type and ACTUALLY switch shader program based on type
+        brush.material->SetShaderType(brush.shaderType);
+        
+        // Switch shader program based on shader type
+        auto& shaderLib = ShaderLibrary::Instance();
+        switch (brush.shaderType) {
+            case ShaderType::Glass: {
+                auto glassShader = shaderLib.Get("glass");
+                if (glassShader) {
+                    brush.material->SetShader(glassShader);
+                }
+                // Set glass-specific properties
+                brush.material->SetFloat("u_Transparency", brush.transparency);
+                brush.material->SetFloat("u_FresnelPower", brush.fresnelPower);
+                brush.material->SetFloat("u_Roughness", brush.roughness);
+                brush.material->SetVec3("u_TintColor", brush.tintColor);
+                
+                // Ensure render state is correct for glass
+                brush.material->SetBlendMode(BlendMode::Transparent);
+                brush.material->SetRenderQueue(RenderQueue::Transparent);
+                break;
+            }
+            case ShaderType::Metal: {
+                auto meshShader = shaderLib.Get("mesh");
+                if (meshShader) {
+                    brush.material->SetShader(meshShader);
+                }
+                brush.material->SetFloat("u_Roughness", brush.roughness);
+                brush.material->SetFloat("u_Metallic", brush.metallic);
+                break;
+            }
+            case ShaderType::Unlit: {
+                auto unlitShader = shaderLib.Get("basic");
+                if (unlitShader) {
+                    brush.material->SetShader(unlitShader);
+                }
+                break;
+            }
+            case ShaderType::Standard:
+            default: {
+                auto meshShader = shaderLib.Get("mesh");
+                if (meshShader) {
+                    brush.material->SetShader(meshShader);
+                }
+                break;
+            }
+        }
+        
+        // Load additional maps (normal/mask)
+        if (!brush.normalMapPath.empty()) {
+            auto normalMap = TextureLibrary::Instance().Load(brush.normalMapPath);
+            if (normalMap) {
+                brush.material->SetTexture("u_NormalTexture", normalMap, 1);
+                brush.material->SetInt("u_HasNormalMap", 1);
+            }
+        }
+        
+        if (!brush.maskMapPath.empty()) {
+            auto maskMap = TextureLibrary::Instance().Load(brush.maskMapPath);
+            if (maskMap) {
+                brush.material->SetTexture("u_MaskTexture", maskMap, 2);
+                brush.material->SetInt("u_HasMaskTexture", 1);
+            }
+        }
     }
 
     // Create collider if brush has collision
@@ -609,6 +702,25 @@ bool MapLoader::SaveJSON(const Map& map, const std::string& filepath) {
             file << "      \"rotation\": [" << brush.rotation.x << ", " << brush.rotation.y << ", " << brush.rotation.z << "],\n";
         }
         file << "      \"material\": \"" << brush.materialName << "\"";
+        
+        // Write shader type if not standard
+        if (brush.shaderType != ShaderType::Standard) {
+             file << ",\n      \"shader\": \"" << ShaderTypeToString(brush.shaderType) << "\"";
+             
+             // Shader specific properties
+             if (brush.shaderType == ShaderType::Glass) {
+                 file << ",\n      \"transparency\": " << brush.transparency;
+                 file << ",\n      \"fresnel\": " << brush.fresnelPower;
+                 file << ",\n      \"roughness\": " << brush.roughness;
+             }
+             
+             if (!brush.normalMapPath.empty()) {
+                 file << ",\n      \"normal_map\": \"" << brush.normalMapPath << "\"";
+             }
+             if (!brush.maskMapPath.empty()) {
+                 file << ",\n      \"mask_map\": \"" << brush.maskMapPath << "\"";
+             }
+        }
 
         // Write flags
         if (HasFlag(brush.flags, BrushFlags::Stair)) file << ",\n      \"stair\": true";
@@ -784,6 +896,23 @@ MapPtr MapLoader::LoadSAU(const std::string& filepath, bool skipBuild) {
                 currentBrush.materialName = value;
             } else if (key == "shape") {
                 currentBrush.shape = StringToBrushShape(value);
+            } else if (key == "shader_type") {
+                currentBrush.shaderType = StringToShaderType(value);
+            } else if (key == "normal_map") {
+                currentBrush.normalMapPath = value;
+            } else if (key == "mask_map") {
+                currentBrush.maskMapPath = value;
+            } else if (key == "transparency") {
+                try { currentBrush.transparency = std::stof(value); } catch(...) {}
+            } else if (key == "fresnel_power") {
+                try { currentBrush.fresnelPower = std::stof(value); } catch(...) {}
+            } else if (key == "roughness") {
+                try { currentBrush.roughness = std::stof(value); } catch(...) {}
+            } else if (key == "metallic") {
+                try { currentBrush.metallic = std::stof(value); } catch(...) {}
+            } else if (key == "tint_color") {
+                std::stringstream ss(value);
+                ss >> currentBrush.tintColor.r >> currentBrush.tintColor.g >> currentBrush.tintColor.b;
             } else if (key == "flags") {
                 if (value.find("nocollision") != std::string::npos)
                     currentBrush.flags = currentBrush.flags | BrushFlags::NoCollision;

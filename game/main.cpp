@@ -288,6 +288,13 @@ bool OnInit() {
         return false;
     }
 
+    // Load glass shader
+    auto glassShader = shaderLib.Load("glass", "glass.vert", "glass.frag");
+    if (!glassShader) {
+        LOG_WARNING("Game", "Failed to load glass shader - glass materials will not render correctly");
+        // Don't fail init, just warn
+    }
+
     // Initialize debug renderer
     if (!g_debugRenderer.Initialize()) {
         LOG_ERROR("Game", "Failed to initialize debug renderer");

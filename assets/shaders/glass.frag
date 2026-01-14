@@ -1,86 +1,155 @@
 #version 330 core
 
+// ============================================================================
+// Glass Fragment Shader - PBR-lite with Fresnel and Normal Mapping
+// Adapted from Hell2025 for OpenGL 3.3
+// ============================================================================
+
+in vec3 v_WorldPos;
+in vec3 v_Normal;
+in vec2 v_TexCoord;
+in vec3 v_Tangent;
+in vec3 v_BiTangent;
+in vec3 v_ViewPos;
+
 out vec4 FragColor;
 
-in vec3 FragPos;
-in vec3 Normal;
-in vec2 TexCoord;
-in vec4 ClipSpacePos;
+// Textures
+uniform sampler2D u_BaseTexture;        // Base color + alpha
+uniform sampler2D u_NormalTexture;      // Normal map
+uniform sampler2D u_MaskTexture;        // Opacity mask (optional)
+uniform bool u_HasNormalMap;
+uniform bool u_HasMaskTexture;
+uniform bool u_FlipNormalMapY;
 
-// Camera
-uniform vec3 u_ViewPos;
+// Material properties
+uniform vec3 u_Color;
+uniform float u_Transparency;           // 0.0 = opaque, 1.0 = fully transparent
+uniform float u_FresnelPower;           // Higher = more edge reflection
+uniform float u_Roughness;
+uniform float u_RefractiveIndex;        // Glass ~1.5
 
-// Glass material properties
-uniform vec3 u_TintColor;         // Glass tint color (default: white)
-uniform float u_Opacity;          // Base transparency (0.0 = invisible, 1.0 = opaque)
-uniform float u_RefractStrength;  // Distortion strength (default: 0.02)
-uniform float u_FresnelPower;     // Edge glow intensity (default: 3.0)
-uniform float u_IOR;              // Index of refraction (1.5 for glass)
-
-// Scene texture (rendered before glass pass)
-uniform sampler2D u_SceneTexture;
-
-// Lighting (simplified)
+// Lighting
 uniform vec3 u_LightDir;
 uniform vec3 u_LightColor;
-uniform float u_AmbientStrength;
+uniform vec3 u_AmbientColor;
+uniform vec3 u_CameraPos;
 
-void main() {
-    vec3 N = normalize(Normal);
-    vec3 V = normalize(u_ViewPos - FragPos);
+// Point lights
+struct PointLight {
+    vec3 position;
+    vec3 color;
+    float radius;
+    float constant;
+    float linear;
+    float quadratic;
+};
+
+#define MAX_POINT_LIGHTS 16
+uniform int u_NumPointLights;
+uniform PointLight u_PointLights[MAX_POINT_LIGHTS];
+
+// Fresnel-Schlick approximation
+float FresnelSchlick(vec3 viewDir, vec3 normal, float F0)
+{
+    float cosTheta = max(dot(viewDir, normal), 0.0);
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, u_FresnelPower);
+}
+
+void main()
+{
+    // Sample base texture
+    vec4 baseColor = texture(u_BaseTexture, v_TexCoord);
+    baseColor.rgb *= u_Color;
     
-    // =========================================================================
-    // Fresnel Effect
-    // =========================================================================
-    // Surfaces are more reflective at glancing angles
-    float NdotV = max(dot(N, V), 0.0);
-    float fresnel = pow(1.0 - NdotV, u_FresnelPower);
-    fresnel = clamp(fresnel, 0.0, 1.0);
+    // Apply mask texture if available
+    float alpha = baseColor.a * (1.0 - u_Transparency);
+    if (u_HasMaskTexture) {
+        float mask = texture(u_MaskTexture, v_TexCoord).r;
+        alpha *= mask;
+    }
     
-    // =========================================================================
-    // Screen-Space Refraction
-    // =========================================================================
-    // Convert to normalized device coordinates (0 to 1)
-    vec2 ndc = (ClipSpacePos.xy / ClipSpacePos.w) * 0.5 + 0.5;
+    // Discard fully transparent pixels
+    if (alpha < 0.01) {
+        discard;
+    }
     
-    // Distort UV based on surface normal (simulate light bending)
-    vec2 distortion = N.xy * u_RefractStrength;
-    vec2 refractUV = ndc + distortion;
+    // Normal mapping
+    vec3 normal;
+    if (u_HasNormalMap) {
+        // Sample and decode normal map
+        vec3 normalMap = texture(u_NormalTexture, v_TexCoord).rgb;
+        normalMap = normalMap * 2.0 - 1.0;
+        
+        if (u_FlipNormalMapY) {
+            normalMap.y *= -1.0;
+        }
+        
+        // Construct TBN matrix and transform normal
+        mat3 TBN = mat3(normalize(v_Tangent), normalize(v_BiTangent), normalize(v_Normal));
+        normal = normalize(TBN * normalMap);
+    } else {
+        normal = normalize(v_Normal);
+    }
     
-    // Clamp to prevent sampling outside texture
-    refractUV = clamp(refractUV, 0.002, 0.998);
+    // View direction
+    vec3 viewDir = normalize(v_ViewPos - v_WorldPos);
     
-    // Sample the scene behind the glass
-    vec3 refractColor = texture(u_SceneTexture, refractUV).rgb;
+    // Fresnel effect - more reflection at grazing angles
+    float F0 = pow((u_RefractiveIndex - 1.0) / (u_RefractiveIndex + 1.0), 2.0);
+    float fresnel = FresnelSchlick(viewDir, normal, F0);
     
-    // =========================================================================
-    // Simple Specular Highlight
-    // =========================================================================
-    vec3 L = normalize(-u_LightDir);
-    vec3 H = normalize(L + V);
-    float spec = pow(max(dot(N, H), 0.0), 64.0);  // High shininess for glass
-    vec3 specular = spec * u_LightColor * 0.5;
+    // Lighting calculations
+    vec3 lightDir = normalize(u_LightDir);
     
-    // =========================================================================
-    // Combine Effects
-    // =========================================================================
-    // Base glass color: blend refracted scene with tint
-    vec3 glassColor = mix(refractColor, u_TintColor * refractColor, 0.3);
+    // Ambient
+    vec3 ambient = u_AmbientColor * baseColor.rgb * 0.3;
     
-    // Add specular highlights
-    glassColor += specular;
+    // Diffuse (attenuated for glass)
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = u_LightColor * diff * baseColor.rgb * 0.5;
     
-    // Add subtle ambient
-    glassColor += u_TintColor * u_AmbientStrength * 0.1;
+    // Specular (glass is very shiny)
+    vec3 halfDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfDir), 0.0), 64.0 / max(u_Roughness, 0.01));
+    vec3 specular = u_LightColor * spec * 0.8;
     
-    // =========================================================================
-    // Alpha Calculation
-    // =========================================================================
-    // Base opacity + fresnel makes edges more visible
-    float alpha = u_Opacity + fresnel * (1.0 - u_Opacity) * 0.5;
+    vec3 finalColor = ambient + diffuse + specular;
     
-    // Add a bit more opacity where specular is strong
-    alpha = clamp(alpha + spec * 0.3, 0.0, 1.0);
+    // Point lights
+    for(int i = 0; i < u_NumPointLights; i++)
+    {
+        float distance = length(u_PointLights[i].position - v_WorldPos);
+        if(distance < u_PointLights[i].radius)
+        {
+            vec3 pLightDir = normalize(u_PointLights[i].position - v_WorldPos);
+            
+            // Diffuse
+            float pDiff = max(dot(normal, pLightDir), 0.0);
+            
+            // Specular
+            vec3 pHalfDir = normalize(pLightDir + viewDir);
+            float pSpec = pow(max(dot(normal, pHalfDir), 0.0), 64.0);
+            
+            // Attenuation
+            float attenuation = 1.0 / (u_PointLights[i].constant + 
+                                       u_PointLights[i].linear * distance + 
+                                       u_PointLights[i].quadratic * (distance * distance));
+            
+            vec3 pColor = u_PointLights[i].color * (pDiff * baseColor.rgb * 0.3 + pSpec * 0.5) * attenuation;
+            finalColor += pColor;
+        }
+    }
     
-    FragColor = vec4(glassColor, alpha);
+    // Add fresnel rim lighting
+    finalColor += fresnel * u_LightColor * 0.3;
+    
+    // Gamma correction
+    finalColor = pow(finalColor, vec3(1.0/2.2));
+    
+    // Output with calculated alpha
+    // Blend between transparent glass and opaque based on fresnel
+    float finalAlpha = mix(alpha, 1.0, fresnel * 0.3);
+    
+    FragColor = vec4(finalColor, finalAlpha);
 }

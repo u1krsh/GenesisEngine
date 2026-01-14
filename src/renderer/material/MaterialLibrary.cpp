@@ -213,6 +213,20 @@ void MaterialLibrary::RegisterBuiltInTemplates() {
         tmpl.cullMode = CullMode::Off;
         RegisterTemplate(tmpl);
     }
+
+    // Glass - Transparent, refractive material with fresnel
+    {
+        MaterialTemplate tmpl;
+        tmpl.name = "Glass";
+        tmpl.shaderName = "glass";
+        tmpl.renderQueue = RenderQueue::Transparent;
+        tmpl.blendMode = BlendMode::Transparent;
+        tmpl.cullMode = CullMode::Back; // Usually double-sided for thin glass, but back for solid objects
+        tmpl.defaultProperties["u_Color"] = Vec3(1.0f, 1.0f, 1.0f);
+        tmpl.defaultProperties["u_Roughness"] = 0.05f;
+        tmpl.defaultProperties["u_Metallic"] = 0.0f;
+        RegisterTemplate(tmpl);
+    }
 }
 
 // ============================================================================
@@ -259,42 +273,16 @@ MaterialPtr MaterialLibrary::CreateEmissive(const std::string& name, const Vec3&
     return material;
 }
 
-MaterialPtr MaterialLibrary::CreateGlass(const std::string& name, const Vec3& tintColor,
-                                          float opacity) {
-    // Load glass shader
-    auto& shaderLib = ShaderLibrary::Instance();
-    auto glassShader = shaderLib.Get("glass");
-    
-    if (!glassShader) {
-        glassShader = shaderLib.Load("glass", "glass.vert", "glass.frag");
-    }
-    
-    if (!glassShader) {
-        LOG_ERROR("MaterialLibrary", "Failed to load glass shader for material: " + name);
-        return nullptr;
-    }
-
-    auto material = Create(name, glassShader);
+MaterialPtr MaterialLibrary::CreateGlass(const std::string& name, const Vec3& tintColor, float opacity) {
+    auto material = CreateFromTemplate(name, "Glass");
     if (material) {
-        // Glass properties
-        material->SetVec3("u_TintColor", tintColor);
-        material->SetFloat("u_Opacity", opacity);
-        material->SetFloat("u_RefractStrength", 0.02f);
-        material->SetFloat("u_FresnelPower", 3.0f);
-        material->SetFloat("u_IOR", 1.5f);
-        
-        // Lighting defaults
-        material->SetVec3("u_LightDir", Vec3(0.5f, -1.0f, 0.3f));
-        material->SetVec3("u_LightColor", Vec3(1.0f, 1.0f, 1.0f));
-        material->SetFloat("u_AmbientStrength", 0.2f);
-        
-        // Render state for transparency
-        material->SetBlendMode(BlendMode::Transparent);
-        material->SetRenderQueue(RenderQueue::Transparent);
-        material->SetDepthWrite(false);  // Important for correct transparency
-        material->SetCullMode(CullMode::Off);  // See both sides of glass
-        
-        LOG_INFO("MaterialLibrary", "Created glass material: " + name);
+        material->SetColor(tintColor);
+        material->SetFloat("u_Transparency", 1.0f - opacity);
+        // Default glass properties
+        material->SetFloat("u_FresnelPower", 2.0f);
+        material->SetFloat("u_Roughness", 0.05f);
+        material->SetFloat("u_RefractiveIndex", 1.52f);
+        material->SetShaderType(ShaderType::Glass);
     }
     return material;
 }

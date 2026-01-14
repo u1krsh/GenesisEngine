@@ -13,7 +13,7 @@
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
 
-#define STB_IMAGE_IMPLEMENTATION
+// Note: STB_IMAGE_IMPLEMENTATION is in engine's Texture2D.cpp
 #include "stb_image.h"
 
 // Simple line shader (embedded)

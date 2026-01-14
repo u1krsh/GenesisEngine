@@ -21,6 +21,11 @@ enum class BrushShape {
     Custom      // Custom mesh (future - for BSP)
 };
 
+// ============================================================================
+// Shader Type - Different rendering modes for brushes
+// Moved to Material.h
+// ============================================================================
+
 inline const char* BrushShapeToString(BrushShape shape) {
     switch (shape) {
         case BrushShape::Cube:     return "cube";
@@ -91,6 +96,20 @@ struct Brush {
 
     // Material name (resolved at load time)
     std::string materialName = "default";
+    
+    // Shader type preference
+    ShaderType shaderType = ShaderType::Standard;
+    
+    // Explicit texture paths
+    std::string normalMapPath;
+    std::string maskMapPath;
+    
+    // Material parameters (embedded for now)
+    float transparency = 0.3f;
+    float fresnelPower = 2.0f;
+    float roughness = 0.1f;
+    float metallic = 0.0f;
+    Vec3 tintColor = Vec3(1.0f);
 
     // Flags
     BrushFlags flags = BrushFlags::CastShadow | BrushFlags::ReceiveShadow;

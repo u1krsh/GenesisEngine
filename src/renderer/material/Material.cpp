@@ -1,4 +1,5 @@
 #include "Material.h"
+#include "renderer/texture/Texture2D.h"
 #include <glad/glad.h>
 #include <iostream>
 #include <algorithm>
@@ -276,9 +277,12 @@ void Material::UploadProperty(const std::string& name) const {
             m_shader->SetMat4(name, arg);
         }
         else if constexpr (std::is_same_v<T, TextureSlot>) {
-            // Bind texture to its unit
-            // Note: Texture2D binding would go here when texture system is implemented
-            // For now, just set the sampler uniform to the correct unit
+            // Actually bind the texture to its unit
+            if (arg.texture) {
+                arg.texture->Bind(arg.unit);
+            }
+            
+            // Set the sampler uniform to point to the correct texture unit
             m_shader->SetSampler(name, arg.unit);
 
             // If we have tiling/offset, upload those too
