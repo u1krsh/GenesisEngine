@@ -191,7 +191,13 @@ MapLoader::MapLoader() {
 MapPtr MapLoader::Load(const std::string& filepath, bool skipBuild) {
     ClearError();
 
-    std::string fullPath = m_basePath + filepath;
+    // Don't prepend base path if filepath is already absolute
+    std::string fullPath;
+    if (!filepath.empty() && (filepath[0] == '/' || (filepath.size() > 1 && filepath[1] == ':'))) {
+        fullPath = filepath;  // Already absolute (Unix or Windows)
+    } else {
+        fullPath = m_basePath + filepath;
+    }
 
     // Detect format by extension
     size_t dotPos = filepath.rfind('.');
@@ -486,8 +492,16 @@ void MapLoader::BuildBrush(Brush& brush) {
 
     // Get material from library
     auto& matLib = MaterialLibrary::Instance();
+    
+    // Create unique cache key including shader type to prevent cache collisions
+    // e.g., "glass/glasswindow001a.png__glass" vs "glass/glasswindow001a.png__standard"
+    std::string materialKey = brush.materialName;
+    if (brush.shaderType == ShaderType::Glass) {
+        materialKey += "__glass";
+    }
+    
     // Get material from library or create if missing
-    brush.material = matLib.Get(brush.materialName);
+    brush.material = matLib.Get(materialKey);
 
     // If material not found, try to create from texture or fallback to color
     if (!brush.material) {
@@ -501,15 +515,18 @@ void MapLoader::BuildBrush(Brush& brush) {
             if (texture) {
                 // Texture found! Create material based on shader type
                 if (brush.shaderType == ShaderType::Glass) {
-                     brush.material = matLib.CreateGlass(brush.materialName, brush.tintColor, 1.0f - brush.transparency);
+                     brush.material = matLib.CreateGlass(materialKey, brush.tintColor, 1.0f - brush.transparency);
                 } else {
-                     brush.material = matLib.CreateFromTemplate(brush.materialName, "LitOpaque");
+                     brush.material = matLib.CreateFromTemplate(materialKey, "LitOpaque");
                 }
                 
                 if (brush.material) {
                     brush.material->SetTexture("u_BaseTexture", texture, 0);
                     brush.material->SetInt("u_HasBaseTexture", 1);
+                    LOG_DEBUG("MapLoader", "Created material '" + materialKey + "' with texture");
                 }
+            } else {
+                LOG_WARNING("MapLoader", "Failed to load texture: " + brush.materialName);
             }
         }
         
@@ -552,8 +569,8 @@ void MapLoader::BuildBrush(Brush& brush) {
                 color = Vec3(0.1f, 0.1f, 0.1f);
             }
     
-            brush.material = matLib.CreateSolidColor(brush.materialName, color);
-            LOG_DEBUG("MapLoader", "Created material '" + brush.materialName + "'");
+            brush.material = matLib.CreateSolidColor(materialKey, color);
+            LOG_DEBUG("MapLoader", "Created solid color material '" + materialKey + "'");
         }
     }
     

@@ -160,13 +160,13 @@ std::unique_ptr<Genesis::Map> Load(const std::string& path) {
             } else if (key == "mask_map") {
                 currentBrush.maskMapPath = value;
             } else if (key == "transparency") {
-                currentBrush.transparency = std::stof(value);
+                try { currentBrush.transparency = std::stof(value); } catch(...) {}
             } else if (key == "fresnel_power") {
-                currentBrush.fresnelPower = std::stof(value);
+                try { currentBrush.fresnelPower = std::stof(value); } catch(...) {}
             } else if (key == "roughness") {
-                currentBrush.roughness = std::stof(value);
+                try { currentBrush.roughness = std::stof(value); } catch(...) {}
             } else if (key == "metallic") {
-                currentBrush.metallic = std::stof(value);
+                try { currentBrush.metallic = std::stof(value); } catch(...) {}
             } else if (key == "tint_color") {
                 std::istringstream ss(value);
                 ss >> currentBrush.tintColor.r >> currentBrush.tintColor.g >> currentBrush.tintColor.b;

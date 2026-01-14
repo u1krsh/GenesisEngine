@@ -60,10 +60,9 @@ brush {
     size = 4 10 4
     shape = cube
     material = glass/glasswindow008a.png
-    shader_type = glass
-    transparency = 0.5
-    fresnel_power = 2.0
+    shader_type = standard
     normal_map = glass/glasswindow008a_normal.png
+    transparency = 0.5
 }
 
 brush {
@@ -71,10 +70,9 @@ brush {
     size = 4 10 4
     shape = cube
     material = glass/glasswindow013a.png
-    shader_type = glass
-    transparency = 0.5
-    fresnel_power = 2.0
+    shader_type = standard
     normal_map = glass/glasswindow013a_normal.png
+    transparency = 0.5
 }
 
 brush {
@@ -82,10 +80,9 @@ brush {
     size = 4 10 4
     shape = cube
     material = glass/glasswindow001a.png
-    shader_type = glass
-    transparency = 0.5
-    fresnel_power = 2.0
+    shader_type = standard
     normal_map = glass/glasswindow001a_normal.png
+    transparency = 0.5
 }
 
 brush {
@@ -104,28 +101,49 @@ brush {
     shader_type = standard
 }
 
+brush {
+    position = 1.0689 8.32032 -28
+    size = 9.00564 15.904 1.988
+    shape = cube
+    material = glass/glasswindow073a.png
+    shader_type = glass
+    normal_map = glass/glasswindow073a_normal.png
+    transparency = 0.3
+    fresnel_power = 2
+}
+
+brush {
+    position = 28.4829 8.33927 -4
+    size = 2.0328 16.2624 10.164
+    shape = cube
+    material = default
+    shader_type = glass
+    transparency = 0.3
+    fresnel_power = 2
+}
+
 entity {
     classname = light
     position = 8.42224 6.68165 -12.8958
-    color = "0 245 255"
-    intensity = "100.000000"
     radius = "165.000000"
+    intensity = "100.000000"
+    color = "0 245 255"
 }
 
 entity {
     classname = light
     position = 8.30118 6.87263 12.6673
-    color = "82 255 0"
-    intensity = "100.000000"
     radius = "200.000000"
+    intensity = "100.000000"
+    color = "82 255 0"
 }
 
 entity {
     classname = light
     position = -8 7.59921 16
-    color = "0 14 255"
-    intensity = "150.000000"
     radius = "200.000000"
+    intensity = "150.000000"
+    color = "0 14 255"
 }
 
 entity {
@@ -136,7 +154,8 @@ entity {
 entity {
     classname = light
     position = -7.78653 7.03359 -14.2211
-    color = "255 0 0"
-    radius = "200.000000"
     intensity = "500.000000"
+    radius = "200.000000"
+    color = "255 0 0"
 }
+

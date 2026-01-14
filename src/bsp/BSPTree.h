@@ -182,6 +182,9 @@ private:
     // Draw a single node (recursive)
     void DrawNode(int32_t nodeIndex, const Vec3& cameraPos, Shader& shader);
     
+    // Helper for two-pass rendering
+    void RenderBSPPass(const Vec3& camPos, Shader& shader);
+    
     // Draw node with frustum culling
     void DrawNodeWithCulling(int32_t nodeIndex, const Vec3& cameraPos, Shader& shader, const Frustum& frustum);
 
@@ -284,6 +287,9 @@ private:
     mutable std::vector<std::pair<float, uint32_t>> m_sortedLeafsBuffer;
     mutable std::vector<GLsizei> m_drawCountsBuffer;
     mutable std::vector<const void*> m_drawOffsetsBuffer;
+
+    // Two-pass rendering for glass transparency
+    bool m_renderingGlassPass = false;
 
     // Frame stats
     mutable uint32_t m_lastFrameFaces = 0;

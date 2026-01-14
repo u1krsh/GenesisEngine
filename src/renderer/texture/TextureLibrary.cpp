@@ -13,6 +13,12 @@ TextureLibrary::TextureLibrary() {
 }
 
 Texture2DPtr TextureLibrary::Load(const std::string& filepath) {
+    // Early return for empty paths
+    if (filepath.empty()) {
+        LOG_WARNING("TextureLibrary", "Attempted to load empty filepath");
+        return nullptr;
+    }
+    
     std::string normalizedPath = NormalizePath(filepath);
     
     // Check cache first
@@ -24,19 +30,39 @@ Texture2DPtr TextureLibrary::Load(const std::string& filepath) {
     // Try to load
     auto texture = std::make_shared<Texture2D>();
     
-    // Try with base path if not absolute
-    std::string loadPath = filepath;
-    if (filepath[0] != '/' && !fs::exists(filepath)) {
-        loadPath = m_basePath + filepath;
+    // Build list of paths to try
+    std::vector<std::string> pathsToTry;
+    
+    // Try exact path first
+    pathsToTry.push_back(filepath);
+    
+    // Try with base path (assets/textures/)
+    if (filepath[0] != '/') {
+        pathsToTry.push_back(m_basePath + filepath);
+    }
+    
+    // Try loading from each path
+    std::string loadPath;
+    bool loaded = false;
+    for (const auto& path : pathsToTry) {
+        if (fs::exists(path)) {
+            loadPath = path;
+            if (texture->LoadFromFile(loadPath)) {
+                loaded = true;
+                break;
+            }
+        }
     }
 
-    if (!texture->LoadFromFile(loadPath)) {
-        LOG_ERROR("TextureLibrary", "Failed to load texture: " + filepath);
+    if (!loaded) {
+        LOG_ERROR("TextureLibrary", "Failed to load texture: " + filepath + 
+                  " (tried: " + m_basePath + filepath + ")");
         return nullptr;
     }
 
-    // Cache it
+    // Cache it and log success
     m_textures[normalizedPath] = texture;
+    LOG_DEBUG("TextureLibrary", "Loaded texture: " + loadPath);
     return texture;
 }
 

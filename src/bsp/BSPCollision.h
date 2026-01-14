@@ -30,6 +30,7 @@ struct BSPCollisionBrush {
     Vec3 boundsMax = Vec3(0.0f);
     BSPContents contents = BSPContents::Solid;
     uint32_t brushId = 0;          // Original brush ID for debugging
+    bool noShadow = false;         // If true, don't cast shadows (for glass)
     
     // Check if a point is inside the AABB (broad phase)
     bool ContainsPointAABB(const Vec3& point) const {
@@ -161,6 +162,9 @@ public:
     
     // Trace a point (zero-size trace)
     TraceResult TracePoint(const Vec3& start, const Vec3& end) const;
+    
+    // Trace a point ignoring brushes with noShadow flag (for shadow rays)
+    TraceResult TracePointIgnoreNoShadow(const Vec3& start, const Vec3& end) const;
     
     // Trace a sphere
     TraceResult TraceSphere(const Vec3& start, const Vec3& end, float radius) const;

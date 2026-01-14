@@ -1,6 +1,7 @@
 #include "BSPCompiler.h"
 #include "BSPBuildVisualizer.h"
 #include "core/Logger.h"
+#include "renderer/material/Material.h"
 #include <algorithm>
 #include <cmath>
 #include <cfloat>
@@ -186,7 +187,12 @@ void BSPCompiler::BrushToFaces(const Brush& brush, uint32_t brushIndex, std::vec
 void BSPCompiler::GenerateCubeFaces(const Brush& brush, uint32_t brushIndex, std::vector<CompileFace>& outFaces) {
     Vec3 pos = brush.position;
     Vec3 halfSize = brush.size * 0.5f;
-    uint32_t matIdx = GetMaterialIndex(brush.materialName);
+    // Use same material key format as MapLoader: materialName__shaderType
+    std::string materialKey = brush.materialName;
+    if (brush.shaderType == ShaderType::Glass) {
+        materialKey += "__glass";
+    }
+    uint32_t matIdx = GetMaterialIndex(materialKey);
 
     // Apply rotation if needed
     Mat4 rotMat = Mat4(1.0f);
@@ -280,7 +286,12 @@ void BSPCompiler::GenerateCubeFaces(const Brush& brush, uint32_t brushIndex, std
 void BSPCompiler::GenerateSphereFaces(const Brush& brush, uint32_t brushIndex, std::vector<CompileFace>& outFaces) {
     Vec3 pos = brush.position;
     Vec3 scale = brush.size * 0.5f;
-    uint32_t matIdx = GetMaterialIndex(brush.materialName);
+    // Use same material key format as MapLoader
+    std::string materialKey = brush.materialName;
+    if (brush.shaderType == ShaderType::Glass) {
+        materialKey += "__glass";
+    }
+    uint32_t matIdx = GetMaterialIndex(materialKey);
 
     const int segments = 16;
     const int rings = 12;
@@ -374,7 +385,12 @@ void BSPCompiler::GenerateSphereFaces(const Brush& brush, uint32_t brushIndex, s
 void BSPCompiler::GenerateCylinderFaces(const Brush& brush, uint32_t brushIndex, std::vector<CompileFace>& outFaces) {
     Vec3 pos = brush.position;
     Vec3 scale = brush.size * 0.5f;
-    uint32_t matIdx = GetMaterialIndex(brush.materialName);
+    // Use same material key format as MapLoader
+    std::string materialKey = brush.materialName;
+    if (brush.shaderType == ShaderType::Glass) {
+        materialKey += "__glass";
+    }
+    uint32_t matIdx = GetMaterialIndex(materialKey);
 
     const int segments = 16;
     const float PI = 3.14159265358979323846f;
@@ -438,7 +454,12 @@ void BSPCompiler::GenerateCylinderFaces(const Brush& brush, uint32_t brushIndex,
 void BSPCompiler::GenerateConeFaces(const Brush& brush, uint32_t brushIndex, std::vector<CompileFace>& outFaces) {
     Vec3 pos = brush.position;
     Vec3 scale = brush.size * 0.5f;
-    uint32_t matIdx = GetMaterialIndex(brush.materialName);
+    // Use same material key format as MapLoader
+    std::string materialKey = brush.materialName;
+    if (brush.shaderType == ShaderType::Glass) {
+        materialKey += "__glass";
+    }
+    uint32_t matIdx = GetMaterialIndex(materialKey);
 
     const int segments = 16;
     const float PI = 3.14159265358979323846f;
@@ -988,6 +1009,11 @@ void BSPCompiler::GenerateCubeCollisionHull(const Brush& brush, uint32_t brushId
     collBrush.contents = brush.IsTrigger() ? BSPContents::Trigger : BSPContents::Solid;
     collBrush.firstPlane = static_cast<uint32_t>(collision.GetPlanes().size());
     collBrush.numPlanes = 6;
+    
+    // Glass brushes don't cast shadows
+    if (brush.shaderType == ShaderType::Glass) {
+        collBrush.noShadow = true;
+    }
 
     // Calculate rotated corners for bounds
     Vec3 corners[8] = {

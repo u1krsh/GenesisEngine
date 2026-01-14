@@ -1,5 +1,6 @@
 #include "LightBaker.h"
 #include "core/Logger.h"
+#include "renderer/texture/Texture2D.h"
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -305,9 +306,124 @@ float LightBaker::ComputeLightContribution(const BakeLight& light,
 bool LightBaker::TraceShadowRay(const Vec3& from, const Vec3& to) const {
     m_stats.numShadowRays++;
     
-    // Use BSP collision for shadow testing
-    TraceResult result = m_bsp->GetCollision().TracePoint(from, to);
-    return result.fraction < 0.99f;  // Hit something before reaching light
+    // Use per-pixel alpha shadow testing for glass faces
+    float shadowAlpha = TraceShadowRayAlpha(from, to);
+    
+    // Also check solid brushes (non-glass)
+    TraceResult result = m_bsp->GetCollision().TracePointIgnoreNoShadow(from, to);
+    if (result.fraction < 0.99f) {
+        return true;  // Hit solid geometry
+    }
+    
+    // Block light if accumulated alpha is high enough
+    return shadowAlpha > 0.5f;
+}
+
+// ============================================================================
+// Per-Pixel Alpha Shadow Testing
+// ============================================================================
+
+bool LightBaker::RayTriangleIntersect(const Vec3& rayOrigin, const Vec3& rayDir,
+                                       const Vec3& v0, const Vec3& v1, const Vec3& v2,
+                                       float& t, float& u, float& v) const {
+    // Möller–Trumbore intersection algorithm
+    const float EPSILON = 0.0000001f;
+    Vec3 edge1 = v1 - v0;
+    Vec3 edge2 = v2 - v0;
+    Vec3 h = glm::cross(rayDir, edge2);
+    float a = glm::dot(edge1, h);
+    
+    if (a > -EPSILON && a < EPSILON) {
+        return false;  // Ray is parallel to triangle
+    }
+    
+    float f = 1.0f / a;
+    Vec3 s = rayOrigin - v0;
+    u = f * glm::dot(s, h);
+    
+    if (u < 0.0f || u > 1.0f) {
+        return false;
+    }
+    
+    Vec3 q = glm::cross(s, edge1);
+    v = f * glm::dot(rayDir, q);
+    
+    if (v < 0.0f || u + v > 1.0f) {
+        return false;
+    }
+    
+    t = f * glm::dot(edge2, q);
+    
+    return t > EPSILON;
+}
+
+float LightBaker::TraceShadowRayAlpha(const Vec3& from, const Vec3& to) const {
+    float accumulatedAlpha = 0.0f;
+    Vec3 rayDir = to - from;
+    float rayLength = glm::length(rayDir);
+    if (rayLength < 0.001f) return 0.0f;
+    rayDir /= rayLength;
+    
+    const auto& faces = m_bsp->GetFaces();
+    const auto& vertices = m_bsp->GetVertices();
+    const auto& materials = m_bsp->GetMaterials();
+    const auto& indices = m_bsp->GetIndices();
+    
+    // Test against all glass faces
+    for (uint32_t fi = 0; fi < faces.size(); ++fi) {
+        const BSPFace& face = faces[fi];
+        
+        // Only check glass materials
+        if (face.materialIndex >= materials.size()) continue;
+        const std::string& matName = materials[face.materialIndex].name;
+        if (matName.size() <= 7 || matName.substr(matName.size() - 7) != "__glass") {
+            continue;
+        }
+        
+        // Get material for texture sampling
+        MaterialPtr mat = MaterialLibrary::Instance().Get(matName);
+        if (!mat) continue;
+        
+        const TextureSlot* texSlot = mat->GetTextureSlot("u_BaseTexture");
+        if (!texSlot || !texSlot->texture) continue;
+        
+        // Test all triangles in this face
+        for (uint32_t i = 0; i + 2 < face.numIndices; i += 3) {
+            uint32_t i0 = indices[face.firstIndex + i];
+            uint32_t i1 = indices[face.firstIndex + i + 1];
+            uint32_t i2 = indices[face.firstIndex + i + 2];
+            
+            if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) {
+                continue;
+            }
+            
+            const Vec3& v0 = vertices[i0].position;
+            const Vec3& v1 = vertices[i1].position;
+            const Vec3& v2 = vertices[i2].position;
+            
+            float t, u, v;
+            if (RayTriangleIntersect(from, rayDir, v0, v1, v2, t, u, v)) {
+                // Check if hit is within ray segment
+                if (t > 0.0f && t < rayLength) {
+                    // Interpolate texture coordinates
+                    const Vec2& uv0 = vertices[i0].texCoord;
+                    const Vec2& uv1 = vertices[i1].texCoord;
+                    const Vec2& uv2 = vertices[i2].texCoord;
+                    
+                    float w = 1.0f - u - v;
+                    Vec2 hitUV = uv0 * w + uv1 * u + uv2 * v;
+                    
+                    // Sample texture alpha
+                    float alpha = texSlot->texture->SampleAlpha(hitUV.x, hitUV.y);
+                    
+                    // Accumulate shadow (opaque parts block more light)
+                    accumulatedAlpha += alpha;
+                }
+            }
+        }
+    }
+    
+    return glm::clamp(accumulatedAlpha, 0.0f, 1.0f);
 }
 
 // ============================================================================

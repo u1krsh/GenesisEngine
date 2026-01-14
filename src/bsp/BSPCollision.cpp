@@ -313,6 +313,40 @@ TraceResult BSPCollision::TracePoint(const Vec3& start, const Vec3& end) const {
 }
 
 // ============================================================================
+// BSPCollision - Trace Point Ignoring NoShadow Brushes (for shadow rays)
+// ============================================================================
+TraceResult BSPCollision::TracePointIgnoreNoShadow(const Vec3& start, const Vec3& end) const {
+    TraceResult result;
+    result.endPos = end;
+    result.fraction = 1.0f;
+    
+    for (const auto& brush : m_brushes) {
+        // Skip brushes that don't cast shadows (glass, etc.)
+        if (brush.noShadow) {
+            continue;
+        }
+        
+        // Broad phase
+        Vec3 traceMin = glm::min(start, end);
+        Vec3 traceMax = glm::max(start, end);
+        
+        if (brush.boundsMax.x < traceMin.x || brush.boundsMin.x > traceMax.x ||
+            brush.boundsMax.y < traceMin.y || brush.boundsMin.y > traceMax.y ||
+            brush.boundsMax.z < traceMin.z || brush.boundsMin.z > traceMax.z) {
+            continue;
+        }
+        
+        TraceToBrush(brush, start, end, 0.0f, result);
+    }
+    
+    if (result.fraction < 1.0f) {
+        result.endPos = start + (end - start) * result.fraction;
+    }
+    
+    return result;
+}
+
+// ============================================================================
 // BSPCollision - Trace Sphere
 // ============================================================================
 TraceResult BSPCollision::TraceSphere(const Vec3& start, const Vec3& end, float radius) const {

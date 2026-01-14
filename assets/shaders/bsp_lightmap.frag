@@ -12,20 +12,26 @@ uniform sampler2D lightmapTexture;  // Texture unit 1
 
 // Material
 uniform vec3 u_Color;
+uniform float u_Alpha;  // For glass transparency (set by C++ code)
 uniform bool hasDiffuseTexture;
 uniform bool hasLightmap;
 
 void main() {
+    // Get alpha from uniform (glass) or default 1.0 (opaque)
+    float alpha = u_Alpha;
+    
     // Diffuse color from texture or base color
     vec3 diffuse = u_Color * VertexColor;
     if (hasDiffuseTexture) {
-        diffuse *= texture(diffuseTexture, TexCoord).rgb;
+        vec4 texColor = texture(diffuseTexture, TexCoord);
+        diffuse *= texColor.rgb;
+        // Use texture alpha for cutout/transparency
+        alpha *= texColor.a;
     }
     
     // Lightmap (pre-baked lighting)
-    vec3 light = vec3(0.02);  // Very dim fallback (near-black when no lightmap)
+    vec3 light = vec3(1.0);  // Full brightness fallback (for unlit/glass)
     if (hasLightmap) {
-        // Lightmap stores pre-multiplied lighting
         light = texture(lightmapTexture, LightmapCoord).rgb;
     }
     
@@ -35,5 +41,5 @@ void main() {
     // Gamma correction
     result = pow(result, vec3(1.0 / 2.2));
     
-    FragColor = vec4(result, 1.0);
+    FragColor = vec4(result, alpha);
 }

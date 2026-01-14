@@ -3,6 +3,7 @@
 #include "math/Math.h"
 #include <string>
 #include <memory>
+#include <vector>
 
 namespace Genesis {
 
@@ -72,6 +73,10 @@ public:
     
     unsigned int GetID() const { return m_textureID; }
     bool IsLoaded() const { return m_textureID != 0; }
+    
+    // Sample the alpha channel at UV coordinates (0-1), returns 0-1
+    // For CPU-side texture sampling (used in light baking)
+    float SampleAlpha(float u, float v) const;
 
     // ========================================================================
     // Settings
@@ -112,6 +117,9 @@ private:
     // Thumbnail cache
     unsigned int m_thumbnailID = 0;
     int m_thumbnailSize = 0;
+    
+    // CPU-side pixel data for sampling (used in light baking)
+    std::vector<unsigned char> m_pixelData;
 };
 
 using Texture2DPtr = std::shared_ptr<Texture2D>;

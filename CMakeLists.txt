@@ -202,6 +202,9 @@ add_executable(GenesisEngine ${GAME_SOURCES} ${GAME_HEADERS})
 target_include_directories(GenesisEngine PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/game)
 target_link_libraries(GenesisEngine PRIVATE GenesisEngineLib)
 
+# Define ASSETS_DIR pointing to SOURCE assets for consistent loading from any build dir
+target_compile_definitions(GenesisEngine PRIVATE ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
+
 # ============================================================================
 # Copy assets to build directory (for running from build folder)
 # ============================================================================
@@ -250,6 +253,9 @@ target_include_directories(OracularV2 PRIVATE
 # Find X11 for ImGui multi-viewport support on Linux
 find_package(X11 REQUIRED)
 target_link_libraries(OracularV2 PRIVATE GenesisEngineLib imgui ${X11_LIBRARIES})
+
+# Define ASSETS_DIR pointing to SOURCE assets (not build) for consistent save/load
+target_compile_definitions(OracularV2 PRIVATE ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 
 # Copy assets for OracularV2 too
 add_custom_command(TARGET OracularV2 POST_BUILD

@@ -133,6 +133,12 @@ private:
     // Shadow rays
     bool TraceShadowRay(const Vec3& from, const Vec3& to) const;
     
+    // Per-pixel alpha shadow testing (traces against faces, samples texture alpha)
+    float TraceShadowRayAlpha(const Vec3& from, const Vec3& to) const;
+    bool RayTriangleIntersect(const Vec3& rayOrigin, const Vec3& rayDir,
+                              const Vec3& v0, const Vec3& v1, const Vec3& v2,
+                              float& t, float& u, float& v) const;
+    
     // Face geometry helpers
     void ComputeFaceTangentSpace(const BSPFace& face, const BSPTree& bsp);
     Vec3 TexelToWorldPosition(const BSPFace& face, float u, float v) const;

@@ -94,11 +94,13 @@ void BSPRenderer::Render(const FPSCamera& camera) {
         
         // For lightmap shader, we don't need dynamic lighting
         m_shader->SetVec3("u_Color", Vec3(1.0f));
+        m_shader->SetFloat("u_Alpha", 1.0f);  // Default opaque
         m_shader->SetInt("hasDiffuseTexture", 0);
     } else {
         // Fall back to dynamic lighting if no lightmap
         m_shader->SetInt("hasLightmap", 0);
-        m_shader->SetVec3("u_Color", Vec3(1.0f, 1.0f, 1.0f));  // Fix for black rendering!
+        m_shader->SetVec3("u_Color", Vec3(1.0f, 1.0f, 1.0f));
+        m_shader->SetFloat("u_Alpha", 1.0f);  // Default opaque
         m_shader->SetVec3("u_LightDir", glm::normalize(Vec3(0.5f, 1.0f, 0.3f)));
         m_shader->SetVec3("u_LightColor", Vec3(1.0f, 0.98f, 0.95f));
         m_shader->SetVec3("u_AmbientColor", Vec3(0.15f, 0.15f, 0.2f));

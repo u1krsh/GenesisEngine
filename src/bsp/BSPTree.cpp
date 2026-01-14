@@ -291,17 +291,24 @@ void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
 
     Vec3 camPos = camera.GetPosition();
 
-    // Phase 1: Simple tree traversal
-    // Draw nodes front-to-back based on camera position
+    // Two-pass global rendering for proper transparency:
+    // Pass 1: Render all OPAQUE faces (skip glass)
+    m_renderingGlassPass = false;
+    RenderBSPPass(camPos, shader);
+    
+    // Pass 2: Render all GLASS faces (after all opaque)
+    m_renderingGlassPass = true;
+    RenderBSPPass(camPos, shader);
+    m_renderingGlassPass = false;
+}
+
+void BSPTree::RenderBSPPass(const Vec3& camPos, Shader& shader) {
     if (m_rootNode >= 0 && !m_nodes.empty()) {
-        // Root is a node - traverse the tree
         DrawNode(m_rootNode, camPos, shader);
     } else if (m_rootNode < 0) {
-        // Root is a leaf (all geometry in one leaf)
         uint32_t leafIdx = static_cast<uint32_t>(-(m_rootNode + 1));
         DrawLeaf(leafIdx, shader);
     } else if (!m_leafs.empty()) {
-        // Fallback: no tree structure, just draw all leafs
         for (uint32_t i = 0; i < m_leafs.size(); i++) {
             DrawLeaf(i, shader);
         }
@@ -309,10 +316,22 @@ void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
 }
 
 void BSPTree::RenderWithCulling(const FPSCamera& camera, Shader& shader) {
-    // For now, just render everything in a single draw call
-    // This matches standard rendering speed
-    RenderAll(shader);
-    m_lastFrameLeafs = static_cast<uint32_t>(m_leafs.size());
+    if (!m_gpuReady) {
+        if (!m_vertices.empty() && !m_indices.empty()) {
+            UploadGeometry();
+            m_gpuReady = true;
+        } else {
+            return;
+        }
+    }
+
+    m_lastFrameFaces = 0;
+    m_lastFrameLeafs = 0;
+    m_lastFrameNodes = 0;
+
+    // Use tree traversal to properly bind textures per-face
+    // This calls DrawFace() which binds the correct texture for each face
+    Render(camera, shader);
 }
 
 void BSPTree::RenderAll(Shader& shader) {
@@ -453,11 +472,30 @@ void BSPTree::DrawLeaf(uint32_t leafIndex, Shader& shader) {
     // Skip empty/solid leafs with no visible faces
     if (leaf.numFaces == 0) return;
 
-    // Draw all faces in this leaf
+    // Draw faces based on current rendering pass
     for (uint32_t i = 0; i < leaf.numFaces; i++) {
         uint32_t faceIdx = m_leafFaces[leaf.firstFace + i];
         if (faceIdx < m_faces.size()) {
-            DrawFace(m_faces[faceIdx], shader);
+            const BSPFace& face = m_faces[faceIdx];
+            
+            // Check if this is a glass face
+            bool isGlass = false;
+            if (face.materialIndex < m_materials.size()) {
+                const std::string& matName = m_materials[face.materialIndex].name;
+                if (matName.size() > 7) {
+                    std::string suffix = matName.substr(matName.size() - 7);
+                    if (suffix == "__glass" || suffix == "__Glass") {
+                        isGlass = true;
+                    }
+                }
+            }
+            
+            // Opaque pass: skip glass, Glass pass: only glass
+            if (m_renderingGlassPass != isGlass) {
+                continue;
+            }
+            
+            DrawFace(face, shader);
         }
     }
 }
@@ -469,13 +507,34 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
 
     // Set material color and texture on the shader
     bool hasTexture = false;
+    bool isGlass = false;
+    float transparency = 0.5f;  // Default glass transparency
+    
     if (face.materialIndex < m_materials.size()) {
         const std::string& matName = m_materials[face.materialIndex].name;
+        
+        // Check if this is a glass material (key ends with __glass or __Glass)
+        if (matName.size() > 7) {
+            std::string suffix = matName.substr(matName.size() - 7);
+            if (suffix == "__glass" || suffix == "__Glass") {
+                isGlass = true;
+            }
+        }
+        
         MaterialPtr mat = MaterialLibrary::Instance().Get(matName);
         if (mat) {
             // Get the color from the material and set it on the BSP shader
             Vec3 color = mat->GetVec3("u_Color", Vec3(1.0f, 1.0f, 1.0f));
             shader.SetVec3("u_Color", color);
+            
+            // Get transparency for glass materials
+            if (isGlass) {
+                // Try both possible property names (u_Transparency from MapLoader, transparency from SAU)
+                transparency = mat->GetFloat("u_Transparency", 0.0f);
+                if (transparency == 0.0f) {
+                    transparency = mat->GetFloat("transparency", 0.3f);
+                }
+            }
             
             // Get and bind texture if available
             const TextureSlot* texSlot = mat->GetTextureSlot("u_BaseTexture");
@@ -485,7 +544,8 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
                 // Debug: Log first time this material's texture is bound
                 static std::unordered_set<std::string> loggedMats;
                 if (loggedMats.find(matName) == loggedMats.end()) {
-                    LOG_INFO("BSPTree", "DrawFace: Binding texture for material '" + matName + "'");
+                    LOG_INFO("BSPTree", "DrawFace: Binding texture for material '" + matName + "'" + 
+                             (isGlass ? " [GLASS trans=" + std::to_string(transparency) + "]" : ""));
                     loggedMats.insert(matName);
                 }
             } else {
@@ -513,11 +573,33 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
     // Set hasDiffuseTexture uniform
     shader.SetInt("hasDiffuseTexture", hasTexture ? 1 : 0);
 
+    // Enable blending for glass materials - uses texture alpha for transparency
+    if (isGlass) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDisable(GL_CULL_FACE);  // Render both sides of glass
+        glDepthMask(GL_FALSE);    // Disable depth write for transparent glass
+        // Use texture alpha only - opaque parts are fully opaque
+        shader.SetFloat("u_Alpha", 1.0f);
+        // Glass uses unlit rendering (bright, not affected by dark lightmap)
+        shader.SetInt("hasLightmap", 0);
+    } else {
+        shader.SetFloat("u_Alpha", 1.0f);
+    }
+
     // Draw the face
     glBindVertexArray(m_vao);
     glDrawElements(GL_TRIANGLES, face.numIndices, GL_UNSIGNED_INT,
                    (void*)(face.firstIndex * sizeof(uint32_t)));
     glBindVertexArray(0);
+    
+    // Restore state after glass
+    if (isGlass) {
+        shader.SetInt("hasLightmap", 1);  // Restore for next face
+        glEnable(GL_CULL_FACE);  // Re-enable backface culling
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+    }
 }
 
 // ============================================================================

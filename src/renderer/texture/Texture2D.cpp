@@ -32,6 +32,7 @@ Texture2D::Texture2D(Texture2D&& other) noexcept
     , m_wrap(other.m_wrap)
     , m_thumbnailID(other.m_thumbnailID)
     , m_thumbnailSize(other.m_thumbnailSize)
+    , m_pixelData(std::move(other.m_pixelData))
 {
     other.m_textureID = 0;
     other.m_thumbnailID = 0;
@@ -50,6 +51,7 @@ Texture2D& Texture2D::operator=(Texture2D&& other) noexcept {
         m_wrap = other.m_wrap;
         m_thumbnailID = other.m_thumbnailID;
         m_thumbnailSize = other.m_thumbnailSize;
+        m_pixelData = std::move(other.m_pixelData);
         
         other.m_textureID = 0;
         other.m_thumbnailID = 0;
@@ -127,6 +129,11 @@ bool Texture2D::Create(int width, int height, int channels, const unsigned char*
     
     glBindTexture(GL_TEXTURE_2D, 0);
     
+    // Store pixel data CPU-side for alpha sampling (used in light baking)
+    if (data && channels >= 3) {
+        m_pixelData.assign(data, data + (width * height * channels));
+    }
+    
     return true;
 }
 
@@ -198,6 +205,7 @@ void Texture2D::Destroy() {
         glDeleteTextures(1, &m_thumbnailID);
         m_thumbnailID = 0;
     }
+    m_pixelData.clear();
 }
 
 void Texture2D::ApplyFilterSettings() {
@@ -232,6 +240,30 @@ void Texture2D::ApplyWrapSettings() {
     }
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapMode);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapMode);
+}
+
+float Texture2D::SampleAlpha(float u, float v) const {
+    // Return 1.0 (opaque) if no pixel data or not enough channels
+    if (m_pixelData.empty() || m_channels < 4 || m_width <= 0 || m_height <= 0) {
+        return 1.0f;
+    }
+    
+    // Wrap UVs to [0, 1)
+    u = u - std::floor(u);
+    v = v - std::floor(v);
+    
+    // Convert to pixel coordinates
+    int x = static_cast<int>(u * m_width) % m_width;
+    int y = static_cast<int>(v * m_height) % m_height;
+    
+    // Get pixel index (alpha is 4th channel)
+    size_t idx = (static_cast<size_t>(y) * m_width + x) * m_channels + 3;
+    
+    if (idx < m_pixelData.size()) {
+        return m_pixelData[idx] / 255.0f;
+    }
+    
+    return 1.0f;
 }
 
 } // namespace Genesis
