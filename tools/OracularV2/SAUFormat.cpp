@@ -170,6 +170,14 @@ std::unique_ptr<Genesis::Map> Load(const std::string& path) {
             } else if (key == "tint_color") {
                 std::istringstream ss(value);
                 ss >> currentBrush.tintColor.r >> currentBrush.tintColor.g >> currentBrush.tintColor.b;
+            } else if (key == "tile_texture") {
+                currentBrush.tileTexture = (value == "true" || value == "1");
+            } else if (key == "ior") {
+                try { currentBrush.ior = std::stof(value); } catch(...) {}
+            } else if (key == "thickness") {
+                try { currentBrush.thickness = std::stof(value); } catch(...) {}
+            } else if (key == "absorption") {
+                try { currentBrush.absorption = std::stof(value); } catch(...) {}
             } else if (key == "flags") {
                 if (value.find("nocollision") != std::string::npos)
                     currentBrush.flags = currentBrush.flags | Genesis::BrushFlags::NoCollision;
@@ -260,6 +268,20 @@ bool Save(const Genesis::Map& map, const std::string& path) {
         }
         if (brush.tintColor != Genesis::Vec3(1.0f)) {
             file << "    tint_color = " << brush.tintColor.r << " " << brush.tintColor.g << " " << brush.tintColor.b << "\n";
+        }
+        if (brush.tileTexture) {
+            file << "    tile_texture = true\n";
+        }
+        
+        // Glass Real properties (only save if non-default or glass_real shader)
+        if (brush.shaderType == Genesis::ShaderType::GlassReal || brush.ior != 1.5f) {
+            file << "    ior = " << brush.ior << "\n";
+        }
+        if (brush.shaderType == Genesis::ShaderType::GlassReal || brush.thickness != 0.1f) {
+            file << "    thickness = " << brush.thickness << "\n";
+        }
+        if (brush.shaderType == Genesis::ShaderType::GlassReal || brush.absorption != 1.0f) {
+            file << "    absorption = " << brush.absorption << "\n";
         }
         
         // Flags

@@ -290,6 +290,11 @@ void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
     m_lastFrameNodes = 0;
 
     Vec3 camPos = camera.GetPosition();
+    
+    // Store camera state for use by DrawFace (needed for glass shader)
+    m_currentViewMatrix = camera.GetViewMatrix();
+    m_currentProjMatrix = camera.GetProjectionMatrix();
+    m_currentCameraPos = camPos;
 
     // Two-pass global rendering for proper transparency:
     // Pass 1: Render all OPAQUE faces (skip glass)
@@ -508,13 +513,23 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
     // Set material color and texture on the shader
     bool hasTexture = false;
     bool isGlass = false;
+    bool isGlassReal = false;
     float transparency = 0.5f;  // Default glass transparency
     
     if (face.materialIndex < m_materials.size()) {
         const std::string& matName = m_materials[face.materialIndex].name;
         
-        // Check if this is a glass material (key ends with __glass or __Glass)
-        if (matName.size() > 7) {
+        // Check if this is a glass_real material (key ends with __glass_real)
+        if (matName.size() > 12) {
+            std::string suffix = matName.substr(matName.size() - 12);
+            if (suffix == "__glass_real") {
+                isGlassReal = true;
+                isGlass = true;  // Also set isGlass for transparency handling
+            }
+        }
+        
+        // Check if this is a regular glass material (key ends with __glass)
+        if (!isGlassReal && matName.size() > 7) {
             std::string suffix = matName.substr(matName.size() - 7);
             if (suffix == "__glass" || suffix == "__Glass") {
                 isGlass = true;
@@ -573,18 +588,88 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
     // Set hasDiffuseTexture uniform
     shader.SetInt("hasDiffuseTexture", hasTexture ? 1 : 0);
 
-    // Enable blending for glass materials - uses texture alpha for transparency
+    // Enable blending for glass materials - texture alpha controls transparency
+    Shader* activeShader = &shader;
+    bool usingGlassRealShader = false;
+    
+    if (isGlassReal) {
+        // Load glass_real shader on demand
+        if (!m_glassRealShaderLoaded) {
+            m_glassRealShader = std::make_shared<Shader>();
+#ifdef ASSETS_DIR
+            std::string vertPath = std::string(ASSETS_DIR) + "/shaders/glass_real.vert";
+            std::string fragPath = std::string(ASSETS_DIR) + "/shaders/glass_real.frag";
+#else
+            std::string vertPath = "assets/shaders/glass_real.vert";
+            std::string fragPath = "assets/shaders/glass_real.frag";
+#endif
+            m_glassRealShader->LoadFromFiles(vertPath, fragPath);
+            m_glassRealShaderLoaded = true;
+            if (m_glassRealShader->IsValid()) {
+                LOG_INFO("BSPTree", "Loaded glass_real shader");
+            } else {
+                LOG_ERROR("BSPTree", "Failed to load glass_real shader");
+            }
+        }
+        
+        if (m_glassRealShader && m_glassRealShader->IsValid()) {
+            m_glassRealShader->Bind();
+            activeShader = m_glassRealShader.get();
+            usingGlassRealShader = true;
+            
+            // Set matrices
+            activeShader->SetMat4("u_Projection", m_currentProjMatrix);
+            activeShader->SetMat4("u_View", m_currentViewMatrix);
+            activeShader->SetMat4("u_Model", Mat4(1.0f));
+            
+            // Set glass_real properties
+            // Get values from material if available, otherwise use defaults
+            MaterialPtr mat = MaterialLibrary::Instance().Get(m_materials[face.materialIndex].name);
+            Vec3 glassTint = Vec3(0.9f, 0.95f, 1.0f);  // Slight blue tint
+            float ior = 1.5f;
+            float thickness = 0.1f;
+            float fresnelPower = 5.0f;
+            float absorption = 1.0f;
+            float roughness = 0.05f;
+            float alpha = 0.3f;
+            
+            if (mat) {
+                glassTint = mat->GetVec3("u_GlassTint", glassTint);
+                ior = mat->GetFloat("u_IOR", ior);
+                thickness = mat->GetFloat("u_Thickness", thickness);
+                fresnelPower = mat->GetFloat("u_FresnelPower", fresnelPower);
+                absorption = mat->GetFloat("u_Absorption", absorption);
+                roughness = mat->GetFloat("u_Roughness", roughness);
+                alpha = mat->GetFloat("u_Alpha", alpha);
+            }
+            
+            activeShader->SetVec3("u_GlassTint", glassTint);
+            activeShader->SetFloat("u_IOR", ior);
+            activeShader->SetFloat("u_Thickness", thickness);
+            activeShader->SetFloat("u_FresnelPower", fresnelPower);
+            activeShader->SetFloat("u_Absorption", absorption);
+            activeShader->SetFloat("u_Roughness", roughness);
+            activeShader->SetFloat("u_Alpha", alpha);
+            
+            // Environment info
+            activeShader->SetVec3("u_LightDir", Vec3(-0.5f, -1.0f, -0.3f));
+            activeShader->SetVec3("u_LightColor", Vec3(1.0f, 0.95f, 0.9f));
+            activeShader->SetVec3("u_AmbientColor", Vec3(0.3f, 0.35f, 0.4f));
+            
+            // Texture uniforms
+            activeShader->SetInt("hasDiffuseTexture", hasTexture ? 1 : 0);
+            activeShader->SetInt("diffuseTexture", 0);
+        }
+    }
+    
     if (isGlass) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDisable(GL_CULL_FACE);  // Render both sides of glass
-        glDepthMask(GL_FALSE);    // Disable depth write for transparent glass
-        // Use texture alpha only - opaque parts are fully opaque
-        shader.SetFloat("u_Alpha", 1.0f);
-        // Glass uses unlit rendering (bright, not affected by dark lightmap)
-        shader.SetInt("hasLightmap", 0);
-    } else {
-        shader.SetFloat("u_Alpha", 1.0f);
+        
+        if (!usingGlassRealShader) {
+            shader.SetInt("hasLightmap", 0);   // Glass is unlit (bright)
+        }
     }
 
     // Draw the face
@@ -595,10 +680,16 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
     
     // Restore state after glass
     if (isGlass) {
-        shader.SetInt("hasLightmap", 1);  // Restore for next face
+        if (!usingGlassRealShader) {
+            shader.SetInt("hasLightmap", 1);  // Restore for next face
+        }
         glEnable(GL_CULL_FACE);  // Re-enable backface culling
-        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
+    }
+    
+    // Switch back to original shader after glass_real
+    if (usingGlassRealShader) {
+        shader.Bind();
     }
 }
 

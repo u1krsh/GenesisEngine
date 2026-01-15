@@ -498,6 +498,8 @@ void MapLoader::BuildBrush(Brush& brush) {
     std::string materialKey = brush.materialName;
     if (brush.shaderType == ShaderType::Glass) {
         materialKey += "__glass";
+    } else if (brush.shaderType == ShaderType::GlassReal) {
+        materialKey += "__glass_real";
     }
     
     // Get material from library or create if missing
@@ -516,11 +518,32 @@ void MapLoader::BuildBrush(Brush& brush) {
                 // Texture found! Create material based on shader type
                 if (brush.shaderType == ShaderType::Glass) {
                      brush.material = matLib.CreateGlass(materialKey, brush.tintColor, 1.0f - brush.transparency);
+                } else if (brush.shaderType == ShaderType::GlassReal) {
+                     // Create material for realistic glass - stores all properties
+                     brush.material = matLib.CreateFromTemplate(materialKey, "LitOpaque");
+                     if (brush.material) {
+                         brush.material->SetVec3("u_GlassTint", brush.tintColor);
+                         brush.material->SetFloat("u_IOR", brush.ior);
+                         brush.material->SetFloat("u_Thickness", brush.thickness);
+                         brush.material->SetFloat("u_FresnelPower", brush.fresnelPower);
+                         brush.material->SetFloat("u_Absorption", brush.absorption);
+                         brush.material->SetFloat("u_Roughness", brush.roughness);
+                         brush.material->SetFloat("u_Alpha", 1.0f - brush.transparency);
+                         brush.material->SetBlendMode(BlendMode::Transparent);
+                         brush.material->SetRenderQueue(RenderQueue::Transparent);
+                     }
                 } else {
                      brush.material = matLib.CreateFromTemplate(materialKey, "LitOpaque");
                 }
                 
                 if (brush.material) {
+                    // Set texture wrap mode based on tileTexture property
+                    if (brush.tileTexture) {
+                        texture->SetWrap(TextureWrap::Repeat);  // Texture tiles/repeats
+                    } else {
+                        texture->SetWrap(TextureWrap::Clamp);   // Texture stretches to fit
+                    }
+                    
                     brush.material->SetTexture("u_BaseTexture", texture, 0);
                     brush.material->SetInt("u_HasBaseTexture", 1);
                     LOG_DEBUG("MapLoader", "Created material '" + materialKey + "' with texture");
@@ -532,45 +555,62 @@ void MapLoader::BuildBrush(Brush& brush) {
         
         // If still no material (not a texture or load failed), create solid color
         if (!brush.material) {
-            // Create a simple colored material based on material name
-            Vec3 color(0.5f, 0.5f, 0.5f); // Default gray
-    
-            // Some common material name to color mappings
-            std::string matName = brush.materialName;
-            std::transform(matName.begin(), matName.end(), matName.begin(), ::tolower);
-    
-            if (matName == "floor" || matName == "ground") {
-                color = Vec3(0.3f, 0.3f, 0.35f);
-            } else if (matName == "wall") {
-                color = Vec3(0.6f, 0.55f, 0.5f);
-            } else if (matName == "ceiling") {
-                color = Vec3(0.7f, 0.7f, 0.75f);
-            } else if (matName == "brick") {
-                color = Vec3(0.6f, 0.3f, 0.2f);
-            } else if (matName == "concrete" || matName == "cement") {
-                color = Vec3(0.5f, 0.5f, 0.5f);
-            } else if (matName == "wood") {
-                color = Vec3(0.5f, 0.35f, 0.2f);
-            } else if (matName == "metal") {
-                color = Vec3(0.6f, 0.6f, 0.65f);
-            } else if (matName == "grass") {
-                color = Vec3(0.2f, 0.5f, 0.2f);
-            } else if (matName == "water") {
-                color = Vec3(0.2f, 0.4f, 0.7f);
-            } else if (matName == "red") {
-                color = Vec3(0.7f, 0.2f, 0.2f);
-            } else if (matName == "green") {
-                color = Vec3(0.2f, 0.7f, 0.2f);
-            } else if (matName == "blue") {
-                color = Vec3(0.2f, 0.2f, 0.7f);
-            } else if (matName == "white") {
-                color = Vec3(0.9f, 0.9f, 0.9f);
-            } else if (matName == "black") {
-                color = Vec3(0.1f, 0.1f, 0.1f);
+            // For GlassReal, create material even without texture
+            if (brush.shaderType == ShaderType::GlassReal) {
+                brush.material = matLib.CreateFromTemplate(materialKey, "LitOpaque");
+                if (brush.material) {
+                    brush.material->SetVec3("u_GlassTint", brush.tintColor);
+                    brush.material->SetFloat("u_IOR", brush.ior);
+                    brush.material->SetFloat("u_Thickness", brush.thickness);
+                    brush.material->SetFloat("u_FresnelPower", brush.fresnelPower);
+                    brush.material->SetFloat("u_Absorption", brush.absorption);
+                    brush.material->SetFloat("u_Roughness", brush.roughness);
+                    brush.material->SetFloat("u_Alpha", 1.0f - brush.transparency);
+                    brush.material->SetBlendMode(BlendMode::Transparent);
+                    brush.material->SetRenderQueue(RenderQueue::Transparent);
+                    LOG_DEBUG("MapLoader", "Created glass_real material '" + materialKey + "'");
+                }
+            } else {
+                // Create a simple colored material based on material name
+                Vec3 color(0.5f, 0.5f, 0.5f); // Default gray
+        
+                // Some common material name to color mappings
+                std::string matName = brush.materialName;
+                std::transform(matName.begin(), matName.end(), matName.begin(), ::tolower);
+        
+                if (matName == "floor" || matName == "ground") {
+                    color = Vec3(0.3f, 0.3f, 0.35f);
+                } else if (matName == "wall") {
+                    color = Vec3(0.6f, 0.55f, 0.5f);
+                } else if (matName == "ceiling") {
+                    color = Vec3(0.7f, 0.7f, 0.75f);
+                } else if (matName == "brick") {
+                    color = Vec3(0.6f, 0.3f, 0.2f);
+                } else if (matName == "concrete" || matName == "cement") {
+                    color = Vec3(0.5f, 0.5f, 0.5f);
+                } else if (matName == "wood") {
+                    color = Vec3(0.5f, 0.35f, 0.2f);
+                } else if (matName == "metal") {
+                    color = Vec3(0.6f, 0.6f, 0.65f);
+                } else if (matName == "grass") {
+                    color = Vec3(0.2f, 0.5f, 0.2f);
+                } else if (matName == "water") {
+                    color = Vec3(0.2f, 0.4f, 0.7f);
+                } else if (matName == "red") {
+                    color = Vec3(0.7f, 0.2f, 0.2f);
+                } else if (matName == "green") {
+                    color = Vec3(0.2f, 0.7f, 0.2f);
+                } else if (matName == "blue") {
+                    color = Vec3(0.2f, 0.2f, 0.7f);
+                } else if (matName == "white") {
+                    color = Vec3(0.9f, 0.9f, 0.9f);
+                } else if (matName == "black") {
+                    color = Vec3(0.1f, 0.1f, 0.1f);
+                }
+        
+                brush.material = matLib.CreateSolidColor(materialKey, color);
+                LOG_DEBUG("MapLoader", "Created solid color material '" + materialKey + "'");
             }
-    
-            brush.material = matLib.CreateSolidColor(materialKey, color);
-            LOG_DEBUG("MapLoader", "Created solid color material '" + materialKey + "'");
         }
     }
     
@@ -930,6 +970,14 @@ MapPtr MapLoader::LoadSAU(const std::string& filepath, bool skipBuild) {
             } else if (key == "tint_color") {
                 std::stringstream ss(value);
                 ss >> currentBrush.tintColor.r >> currentBrush.tintColor.g >> currentBrush.tintColor.b;
+            } else if (key == "tile_texture") {
+                currentBrush.tileTexture = (value == "true" || value == "1");
+            } else if (key == "ior") {
+                try { currentBrush.ior = std::stof(value); } catch(...) {}
+            } else if (key == "thickness") {
+                try { currentBrush.thickness = std::stof(value); } catch(...) {}
+            } else if (key == "absorption") {
+                try { currentBrush.absorption = std::stof(value); } catch(...) {}
             } else if (key == "flags") {
                 if (value.find("nocollision") != std::string::npos)
                     currentBrush.flags = currentBrush.flags | BrushFlags::NoCollision;

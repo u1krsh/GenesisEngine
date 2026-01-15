@@ -48,7 +48,8 @@ enum class CullMode {
 // ============================================================================
 enum class ShaderType {
     Standard,   // Default opaque rendering
-    Glass,      // Transparent with fresnel, normal mapping
+    Glass,      // Transparent with texture alpha
+    GlassReal,  // Realistic procedural glass (Fresnel, refraction, thickness)
     Metal,      // High reflectivity PBR
     Emissive,   // Self-illuminated surfaces
     Water,      // Animated water surface (future)
@@ -58,25 +59,27 @@ enum class ShaderType {
 
 inline const char* ShaderTypeToString(ShaderType type) {
     switch (type) {
-        case ShaderType::Standard: return "standard";
-        case ShaderType::Glass:    return "glass";
-        case ShaderType::Metal:    return "metal";
-        case ShaderType::Emissive: return "emissive";
-        case ShaderType::Water:    return "water";
-        case ShaderType::Skybox:   return "skybox";
-        case ShaderType::Unlit:    return "unlit";
-        default:                   return "standard";
+        case ShaderType::Standard:  return "standard";
+        case ShaderType::Glass:     return "glass";
+        case ShaderType::GlassReal: return "glass_real";
+        case ShaderType::Metal:     return "metal";
+        case ShaderType::Emissive:  return "emissive";
+        case ShaderType::Water:     return "water";
+        case ShaderType::Skybox:    return "skybox";
+        case ShaderType::Unlit:     return "unlit";
+        default:                    return "standard";
     }
 }
 
 inline ShaderType StringToShaderType(const std::string& str) {
-    if (str == "standard") return ShaderType::Standard;
-    if (str == "glass")    return ShaderType::Glass;
-    if (str == "metal")    return ShaderType::Metal;
-    if (str == "emissive") return ShaderType::Emissive;
-    if (str == "water")    return ShaderType::Water;
-    if (str == "skybox")   return ShaderType::Skybox;
-    if (str == "unlit")    return ShaderType::Unlit;
+    if (str == "standard")   return ShaderType::Standard;
+    if (str == "glass")      return ShaderType::Glass;
+    if (str == "glass_real") return ShaderType::GlassReal;
+    if (str == "metal")      return ShaderType::Metal;
+    if (str == "emissive")   return ShaderType::Emissive;
+    if (str == "water")      return ShaderType::Water;
+    if (str == "skybox")     return ShaderType::Skybox;
+    if (str == "unlit")      return ShaderType::Unlit;
     return ShaderType::Standard;
 }
 

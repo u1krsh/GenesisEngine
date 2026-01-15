@@ -657,6 +657,18 @@ void EditorApp::RenderPropertiesPanel() {
                 
                 ImGui::Spacing();
                 
+                // Tile Texture option
+                if (ImGui::Checkbox("Tile Texture", &brush->brush.tileTexture)) {
+                    changed = true;
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(?)");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("When enabled, texture repeats/tiles.\nWhen disabled, texture stretches to fit.");
+                }
+                
+                ImGui::Spacing();
+                
                 // ====================================================================
                 // Shader Selection
                 // ====================================================================
@@ -693,6 +705,29 @@ void EditorApp::RenderPropertiesPanel() {
                     }
                     ImGui::Unindent();
                     }
+                else if (brush->brush.shaderType == Genesis::ShaderType::GlassReal) {
+                    ImGui::Indent();
+                    ImGui::TextDisabled("Realistic Glass Properties");
+                    
+                    // Tint color
+                    float tint[3] = {brush->brush.tintColor.r, brush->brush.tintColor.g, brush->brush.tintColor.b};
+                    if (ImGui::ColorEdit3("Tint Color", tint)) {
+                        brush->brush.tintColor = Genesis::Vec3(tint[0], tint[1], tint[2]);
+                        changed = true;
+                    }
+                    
+                    if (ImGui::SliderFloat("IOR (Refraction)", &brush->brush.ior, 1.0f, 2.5f, "%.2f")) changed = true;
+                    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Index of Refraction:\n1.0 = Air\n1.33 = Water\n1.5 = Glass\n2.4 = Diamond");
+                    
+                    if (ImGui::SliderFloat("Thickness", &brush->brush.thickness, 0.01f, 1.0f, "%.3f")) changed = true;
+                    if (ImGui::SliderFloat("Absorption", &brush->brush.absorption, 0.0f, 5.0f, "%.2f")) changed = true;
+                    if (ImGui::SliderFloat("Fresnel Power", &brush->brush.fresnelPower, 1.0f, 10.0f)) changed = true;
+                    if (ImGui::SliderFloat("Roughness", &brush->brush.roughness, 0.0f, 1.0f)) changed = true;
+                    if (ImGui::SliderFloat("Transparency", &brush->brush.transparency, 0.0f, 1.0f)) changed = true;
+                    
+                    ImGui::Unindent();
+                }
                 else if (brush->brush.shaderType == Genesis::ShaderType::Metal) {
                     ImGui::Indent();
                     ImGui::TextDisabled("Metal Properties");

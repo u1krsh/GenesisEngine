@@ -13,6 +13,7 @@ brush {
     shape = cube
     material = glass/glassblock001a.png
     shader_type = standard
+    tile_texture = true
 }
 
 brush {
@@ -63,6 +64,7 @@ brush {
     shader_type = standard
     normal_map = glass/glasswindow008a_normal.png
     transparency = 0.5
+    tile_texture = true
 }
 
 brush {
@@ -73,6 +75,7 @@ brush {
     shader_type = standard
     normal_map = glass/glasswindow013a_normal.png
     transparency = 0.5
+    tile_texture = true
 }
 
 brush {
@@ -83,6 +86,7 @@ brush {
     shader_type = standard
     normal_map = glass/glasswindow001a_normal.png
     transparency = 0.5
+    tile_texture = true
 }
 
 brush {
@@ -91,6 +95,7 @@ brush {
     shape = cube
     material = glass/glassclock001a.png
     shader_type = standard
+    tile_texture = true
 }
 
 brush {
@@ -116,34 +121,46 @@ brush {
     position = 28.4829 8.33927 -4
     size = 2.0328 16.2624 10.164
     shape = cube
-    material = default
+    material = glass/glasswindow041b.png
     shader_type = glass
+    normal_map = glass/glasswindow041b_normal.png
     transparency = 0.3
     fresnel_power = 2
+}
+
+brush {
+    position = 0.416622 7.53871 20
+    size = 9.12 14.1056 3.04
+    shape = cube
+    material = default
+    shader_type = glass_real
+    ior = 1.5
+    thickness = 0.1
+    absorption = 1
 }
 
 entity {
     classname = light
     position = 8.42224 6.68165 -12.8958
-    radius = "165.000000"
-    intensity = "100.000000"
     color = "0 245 255"
+    intensity = "100.000000"
+    radius = "165.000000"
 }
 
 entity {
     classname = light
     position = 8.30118 6.87263 12.6673
-    radius = "200.000000"
-    intensity = "100.000000"
     color = "82 255 0"
+    intensity = "100.000000"
+    radius = "200.000000"
 }
 
 entity {
     classname = light
     position = -8 7.59921 16
-    radius = "200.000000"
-    intensity = "150.000000"
     color = "0 14 255"
+    intensity = "150.000000"
+    radius = "200.000000"
 }
 
 entity {
@@ -154,8 +171,8 @@ entity {
 entity {
     classname = light
     position = -7.78653 7.03359 -14.2211
-    intensity = "500.000000"
-    radius = "200.000000"
     color = "255 0 0"
+    radius = "200.000000"
+    intensity = "500.000000"
 }
 

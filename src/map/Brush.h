@@ -110,6 +110,12 @@ struct Brush {
     float roughness = 0.1f;
     float metallic = 0.0f;
     Vec3 tintColor = Vec3(1.0f);
+    bool tileTexture = false;  // If true, texture tiles; if false, texture stretches
+    
+    // Glass Real properties
+    float ior = 1.5f;          // Index of refraction (1.5 for standard glass)
+    float thickness = 0.1f;     // Simulated glass thickness for absorption
+    float absorption = 1.0f;    // Light absorption strength
 
     // Flags
     BrushFlags flags = BrushFlags::CastShadow | BrushFlags::ReceiveShadow;

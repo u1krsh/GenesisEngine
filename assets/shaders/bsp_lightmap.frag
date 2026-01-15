@@ -17,16 +17,23 @@ uniform bool hasDiffuseTexture;
 uniform bool hasLightmap;
 
 void main() {
-    // Get alpha from uniform (glass) or default 1.0 (opaque)
-    float alpha = u_Alpha;
+    // Default to fully opaque
+    float alpha = 1.0;
     
     // Diffuse color from texture or base color
     vec3 diffuse = u_Color * VertexColor;
+    
     if (hasDiffuseTexture) {
         vec4 texColor = texture(diffuseTexture, TexCoord);
         diffuse *= texColor.rgb;
-        // Use texture alpha for cutout/transparency
-        alpha *= texColor.a;
+        
+        // Use texture alpha directly - transparent PNG parts become transparent
+        alpha = texColor.a;
+    }
+    
+    // Discard fully transparent pixels
+    if (alpha < 0.01) {
+        discard;
     }
     
     // Lightmap (pre-baked lighting)

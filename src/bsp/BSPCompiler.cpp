@@ -191,6 +191,8 @@ void BSPCompiler::GenerateCubeFaces(const Brush& brush, uint32_t brushIndex, std
     std::string materialKey = brush.materialName;
     if (brush.shaderType == ShaderType::Glass) {
         materialKey += "__glass";
+    } else if (brush.shaderType == ShaderType::GlassReal) {
+        materialKey += "__glass_real";
     }
     uint32_t matIdx = GetMaterialIndex(materialKey);
 
@@ -258,25 +260,50 @@ void BSPCompiler::GenerateCubeFaces(const Brush& brush, uint32_t brushIndex, std
         Vec3 normal = transformNormal(faces[f].normal);
         face.plane = BSPPlane(normal, corners[faces[f].indices[0]]);
 
-        // Add 4 vertices for quad
+        // First pass: collect positions to calculate UV bounds
+        std::vector<Vec2> rawUVs;
         for (int v = 0; v < 4; v++) {
             BSPVertex vert;
             vert.position = corners[faces[f].indices[v]];
             vert.normal = normal;
 
-            // Simple UV mapping based on face orientation
+            // Calculate raw UV based on face orientation
+            Vec2 rawUV;
             if (std::abs(normal.y) > 0.9f) {
                 // Top/bottom face - use XZ
-                vert.texCoord = Vec2(vert.position.x, vert.position.z);
+                rawUV = Vec2(vert.position.x, vert.position.z);
             } else if (std::abs(normal.x) > 0.9f) {
                 // Left/right face - use ZY
-                vert.texCoord = Vec2(vert.position.z, vert.position.y);
+                rawUV = Vec2(vert.position.z, vert.position.y);
             } else {
                 // Front/back face - use XY
-                vert.texCoord = Vec2(vert.position.x, vert.position.y);
+                rawUV = Vec2(vert.position.x, vert.position.y);
             }
-
+            rawUVs.push_back(rawUV);
+            vert.texCoord = rawUV;  // Temporary, will be normalized if needed
             face.vertices.push_back(vert);
+        }
+        
+        // If not tiling, normalize UVs to [0,1] so texture stretches to fit
+        if (!brush.tileTexture && !face.vertices.empty()) {
+            // Find UV bounds
+            Vec2 uvMin = rawUVs[0];
+            Vec2 uvMax = rawUVs[0];
+            for (const auto& uv : rawUVs) {
+                uvMin.x = std::min(uvMin.x, uv.x);
+                uvMin.y = std::min(uvMin.y, uv.y);
+                uvMax.x = std::max(uvMax.x, uv.x);
+                uvMax.y = std::max(uvMax.y, uv.y);
+            }
+            
+            // Normalize UVs to [0,1]
+            Vec2 uvRange = uvMax - uvMin;
+            if (uvRange.x > 0.001f && uvRange.y > 0.001f) {
+                for (size_t v = 0; v < face.vertices.size(); v++) {
+                    face.vertices[v].texCoord.x = (rawUVs[v].x - uvMin.x) / uvRange.x;
+                    face.vertices[v].texCoord.y = (rawUVs[v].y - uvMin.y) / uvRange.y;
+                }
+            }
         }
 
         outFaces.push_back(std::move(face));
@@ -290,6 +317,8 @@ void BSPCompiler::GenerateSphereFaces(const Brush& brush, uint32_t brushIndex, s
     std::string materialKey = brush.materialName;
     if (brush.shaderType == ShaderType::Glass) {
         materialKey += "__glass";
+    } else if (brush.shaderType == ShaderType::GlassReal) {
+        materialKey += "__glass_real";
     }
     uint32_t matIdx = GetMaterialIndex(materialKey);
 
@@ -389,6 +418,8 @@ void BSPCompiler::GenerateCylinderFaces(const Brush& brush, uint32_t brushIndex,
     std::string materialKey = brush.materialName;
     if (brush.shaderType == ShaderType::Glass) {
         materialKey += "__glass";
+    } else if (brush.shaderType == ShaderType::GlassReal) {
+        materialKey += "__glass_real";
     }
     uint32_t matIdx = GetMaterialIndex(materialKey);
 
@@ -458,6 +489,8 @@ void BSPCompiler::GenerateConeFaces(const Brush& brush, uint32_t brushIndex, std
     std::string materialKey = brush.materialName;
     if (brush.shaderType == ShaderType::Glass) {
         materialKey += "__glass";
+    } else if (brush.shaderType == ShaderType::GlassReal) {
+        materialKey += "__glass_real";
     }
     uint32_t matIdx = GetMaterialIndex(materialKey);
 

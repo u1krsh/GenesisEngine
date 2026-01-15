@@ -290,6 +290,15 @@ private:
 
     // Two-pass rendering for glass transparency
     bool m_renderingGlassPass = false;
+    
+    // Current camera state (stored during Render() for use in DrawFace)
+    mutable Mat4 m_currentViewMatrix;
+    mutable Mat4 m_currentProjMatrix;
+    mutable Vec3 m_currentCameraPos;
+    
+    // Glass real shader (loaded on demand)
+    mutable std::shared_ptr<Shader> m_glassRealShader;
+    mutable bool m_glassRealShaderLoaded = false;
 
     // Frame stats
     mutable uint32_t m_lastFrameFaces = 0;
