@@ -1,5 +1,5 @@
 // ============================================================================
-// Genesis Engine - Game Main Entry Point
+// Genesis Engine - Engine Main Entry Point
 // ============================================================================
 
 #include "core/Engine.h"
