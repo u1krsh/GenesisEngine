@@ -299,6 +299,11 @@ private:
     // Glass real shader (loaded on demand)
     mutable std::shared_ptr<Shader> m_glassRealShader;
     mutable bool m_glassRealShaderLoaded = false;
+    
+    // Scene color texture for glass refraction (screen-space refraction)
+    mutable uint32_t m_sceneColorTexture = 0;
+    mutable int m_sceneColorWidth = 0;
+    mutable int m_sceneColorHeight = 0;
 
     // Frame stats
     mutable uint32_t m_lastFrameFaces = 0;

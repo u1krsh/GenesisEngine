@@ -80,6 +80,10 @@ void BSPTree::ClearGPUResources() {
         glDeleteTextures(1, &m_lightmapTexture);
         m_lightmapTexture = 0;
     }
+    if (m_sceneColorTexture) {
+        glDeleteTextures(1, &m_sceneColorTexture);
+        m_sceneColorTexture = 0;
+    }
     m_gpuReady = false;
     m_lightmapUploaded = false;
 }
@@ -301,6 +305,34 @@ void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
     m_renderingGlassPass = false;
     RenderBSPPass(camPos, shader);
     
+    // === Capture scene color for glass refraction ===
+    // Get current viewport dimensions
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    int vpWidth = viewport[2];
+    int vpHeight = viewport[3];
+    
+    // Create or resize scene color texture if needed
+    if (m_sceneColorTexture == 0 || m_sceneColorWidth != vpWidth || m_sceneColorHeight != vpHeight) {
+        if (m_sceneColorTexture == 0) {
+            glGenTextures(1, &m_sceneColorTexture);
+        }
+        
+        glBindTexture(GL_TEXTURE_2D, m_sceneColorTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, vpWidth, vpHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        
+        m_sceneColorWidth = vpWidth;
+        m_sceneColorHeight = vpHeight;
+    }
+    
+    // Copy current framebuffer to scene color texture
+    glBindTexture(GL_TEXTURE_2D, m_sceneColorTexture);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewport[0], viewport[1], vpWidth, vpHeight);
+    
     // Pass 2: Render all GLASS faces (after all opaque)
     m_renderingGlassPass = true;
     RenderBSPPass(camPos, shader);
@@ -483,11 +515,19 @@ void BSPTree::DrawLeaf(uint32_t leafIndex, Shader& shader) {
         if (faceIdx < m_faces.size()) {
             const BSPFace& face = m_faces[faceIdx];
             
-            // Check if this is a glass face
+            // Check if this is a glass face (either __glass or __glass_real)
             bool isGlass = false;
             if (face.materialIndex < m_materials.size()) {
                 const std::string& matName = m_materials[face.materialIndex].name;
-                if (matName.size() > 7) {
+                // Check for __glass_real first (12 chars)
+                if (matName.size() > 12) {
+                    std::string suffix = matName.substr(matName.size() - 12);
+                    if (suffix == "__glass_real") {
+                        isGlass = true;
+                    }
+                }
+                // Then check for __glass (7 chars)
+                if (!isGlass && matName.size() > 7) {
                     std::string suffix = matName.substr(matName.size() - 7);
                     if (suffix == "__glass" || suffix == "__Glass") {
                         isGlass = true;
@@ -623,15 +663,15 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
             activeShader->SetMat4("u_Model", Mat4(1.0f));
             
             // Set glass_real properties
-            // Get values from material if available, otherwise use defaults
+            // Get values from material if available, otherwise use realistic defaults
             MaterialPtr mat = MaterialLibrary::Instance().Get(m_materials[face.materialIndex].name);
-            Vec3 glassTint = Vec3(0.9f, 0.95f, 1.0f);  // Slight blue tint
-            float ior = 1.5f;
-            float thickness = 0.1f;
-            float fresnelPower = 5.0f;
-            float absorption = 1.0f;
-            float roughness = 0.05f;
-            float alpha = 0.3f;
+            Vec3 glassTint = Vec3(0.92f, 0.96f, 1.0f);  // Visible blue tint
+            float ior = 1.45f;           // Standard glass IOR
+            float thickness = 0.5f;      // Higher thickness for visible effect
+            float fresnelPower = 5.0f;   // Standard Schlick
+            float absorption = 0.5f;     // Subtle absorption
+            float roughness = 0.0f;      // Clear glass by default
+            float alpha = 0.6f;          // Semi-transparent (user requested 0.6-0.85)
             
             if (mat) {
                 glassTint = mat->GetVec3("u_GlassTint", glassTint);
@@ -659,12 +699,26 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
             // Texture uniforms
             activeShader->SetInt("hasDiffuseTexture", hasTexture ? 1 : 0);
             activeShader->SetInt("diffuseTexture", 0);
+            
+            // Scene color texture for refraction (bind to texture unit 2)
+            if (m_sceneColorTexture != 0) {
+                glActiveTexture(GL_TEXTURE2);
+                glBindTexture(GL_TEXTURE_2D, m_sceneColorTexture);
+                activeShader->SetInt("sceneColor", 2);
+                activeShader->SetVec2("screenSize", Vec2(static_cast<float>(m_sceneColorWidth), 
+                                                          static_cast<float>(m_sceneColorHeight)));
+                glActiveTexture(GL_TEXTURE0);  // Reset to default
+            }
+            
+            // Noise texture (not available, set to 0)
+            activeShader->SetInt("hasNoiseTexture", 0);
         }
     }
     
     if (isGlass) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);    // Don't write to depth buffer (critical for glass)
         glDisable(GL_CULL_FACE);  // Render both sides of glass
         
         if (!usingGlassRealShader) {
@@ -683,7 +737,8 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
         if (!usingGlassRealShader) {
             shader.SetInt("hasLightmap", 1);  // Restore for next face
         }
-        glEnable(GL_CULL_FACE);  // Re-enable backface culling
+        glDepthMask(GL_TRUE);     // Re-enable depth writes
+        glEnable(GL_CULL_FACE);   // Re-enable backface culling
         glDisable(GL_BLEND);
     }
     
