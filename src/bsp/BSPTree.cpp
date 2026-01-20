@@ -243,6 +243,11 @@ void BSPTree::UploadGeometry() {
                           (void*)offsetof(BSPVertex, lightmapCoord));
     glEnableVertexAttribArray(4);
 
+    // Tangent attribute (location 5) - For normal mapping TBN matrix
+    glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+                          (void*)offsetof(BSPVertex, tangent));
+    glEnableVertexAttribArray(5);
+
     // Upload index data
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(uint32_t),
@@ -627,6 +632,21 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
     
     // Set hasDiffuseTexture uniform
     shader.SetInt("hasDiffuseTexture", hasTexture ? 1 : 0);
+    
+    // Bind normal map if available (texture unit 2)
+    bool hasNormalMap = false;
+    if (face.materialIndex < m_materials.size()) {
+        const std::string& matName = m_materials[face.materialIndex].name;
+        MaterialPtr mat = MaterialLibrary::Instance().Get(matName);
+        if (mat) {
+            const TextureSlot* normalSlot = mat->GetTextureSlot("u_NormalTexture");
+            if (normalSlot && normalSlot->texture) {
+                normalSlot->texture->Bind(2);
+                hasNormalMap = true;
+            }
+        }
+    }
+    shader.SetInt("hasNormalMap", hasNormalMap ? 1 : 0);
 
     // Enable blending for glass materials - texture alpha controls transparency
     Shader* activeShader = &shader;

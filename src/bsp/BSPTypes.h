@@ -80,14 +80,17 @@ struct BSPVertex {
     Vec3 position;
     Vec3 normal;
     Vec2 texCoord;           // UV1: Diffuse texture
-    Vec2 lightmapCoord;      // UV2: Lightmap texture (Phase 4A)
     Vec3 color = Vec3(1.0f); // Vertex color (fallback/tint)
+    Vec2 lightmapCoord;      // UV2: Lightmap texture (Phase 4A)
+    Vec3 tangent = Vec3(1.0f, 0.0f, 0.0f);  // Tangent vector for normal mapping TBN matrix
 
     BSPVertex() = default;
     BSPVertex(const Vec3& pos, const Vec3& norm, const Vec2& tex)
         : position(pos), normal(norm), texCoord(tex), lightmapCoord(Vec2(0.0f)) {}
     BSPVertex(const Vec3& pos, const Vec3& norm, const Vec2& tex, const Vec2& lmCoord)
         : position(pos), normal(norm), texCoord(tex), lightmapCoord(lmCoord) {}
+    BSPVertex(const Vec3& pos, const Vec3& norm, const Vec2& tex, const Vec2& lmCoord, const Vec3& tang)
+        : position(pos), normal(norm), texCoord(tex), lightmapCoord(lmCoord), tangent(tang) {}
 };
 
 // ============================================================================

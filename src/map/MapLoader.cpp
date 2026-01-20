@@ -546,6 +546,23 @@ void MapLoader::BuildBrush(Brush& brush) {
                     
                     brush.material->SetTexture("u_BaseTexture", texture, 0);
                     brush.material->SetInt("u_HasBaseTexture", 1);
+                    
+                    // Auto-detect normal map using naming convention: name_normal.png
+                    if (brush.normalMapPath.empty()) {
+                        // Build normal map path from base texture path
+                        std::string basePath = brush.materialName;
+                        size_t dotPos = basePath.rfind('.');
+                        if (dotPos != std::string::npos) {
+                            std::string normalPath = basePath.substr(0, dotPos) + "_normal" + basePath.substr(dotPos);
+                            auto normalMap = texLib.Load(normalPath);
+                            if (normalMap) {
+                                brush.material->SetTexture("u_NormalTexture", normalMap, 2);
+                                brush.material->SetInt("u_HasNormalMap", 1);
+                                LOG_DEBUG("MapLoader", "Auto-detected normal map: " + normalPath);
+                            }
+                        }
+                    }
+                    
                     LOG_DEBUG("MapLoader", "Created material '" + materialKey + "' with texture");
                 }
             } else {

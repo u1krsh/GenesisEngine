@@ -259,6 +259,20 @@ void BSPCompiler::GenerateCubeFaces(const Brush& brush, uint32_t brushIndex, std
 
         Vec3 normal = transformNormal(faces[f].normal);
         face.plane = BSPPlane(normal, corners[faces[f].indices[0]]);
+        
+        // Calculate tangent based on face orientation (aligned with U texture direction)
+        Vec3 localTangent;
+        if (std::abs(faces[f].normal.y) > 0.9f) {
+            // Top/bottom face - U is along +X
+            localTangent = Vec3(1, 0, 0);
+        } else if (std::abs(faces[f].normal.x) > 0.9f) {
+            // Left/right face - U is along +Z
+            localTangent = Vec3(0, 0, 1);
+        } else {
+            // Front/back face - U is along +X
+            localTangent = Vec3(1, 0, 0);
+        }
+        Vec3 tangent = transformNormal(localTangent);
 
         // First pass: collect positions to calculate UV bounds
         std::vector<Vec2> rawUVs;
@@ -266,13 +280,14 @@ void BSPCompiler::GenerateCubeFaces(const Brush& brush, uint32_t brushIndex, std
             BSPVertex vert;
             vert.position = corners[faces[f].indices[v]];
             vert.normal = normal;
+            vert.tangent = tangent;
 
             // Calculate raw UV based on face orientation
             Vec2 rawUV;
-            if (std::abs(normal.y) > 0.9f) {
+            if (std::abs(faces[f].normal.y) > 0.9f) {
                 // Top/bottom face - use XZ
                 rawUV = Vec2(vert.position.x, vert.position.z);
-            } else if (std::abs(normal.x) > 0.9f) {
+            } else if (std::abs(faces[f].normal.x) > 0.9f) {
                 // Left/right face - use ZY
                 rawUV = Vec2(vert.position.z, vert.position.y);
             } else {

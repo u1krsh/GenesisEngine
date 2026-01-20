@@ -11,8 +11,9 @@ brush {
     position = 0 -2 0
     size = 64 4 64
     shape = cube
-    material = glass/glassblock001a.png
+    material = bricks/brickwall026a.png
     shader_type = standard
+    normal_map = bricks/brickwall026a_normal.png
     tile_texture = true
 }
 
@@ -93,9 +94,9 @@ brush {
     position = -15 5 15
     size = 4 10 4
     shape = cube
-    material = glass/glassclock001a.png
+    material = bricks/brickwall015a.png
     shader_type = standard
-    tile_texture = true
+    normal_map = bricks/brickwall015a_normal.png
 }
 
 brush {
@@ -154,7 +155,7 @@ entity {
     position = 8.30118 6.87263 12.6673
     radius = "200.000000"
     intensity = "100.000000"
-    color = "82 255 0"
+    color = "255 125 0"
 }
 
 entity {
