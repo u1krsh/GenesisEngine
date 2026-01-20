@@ -96,6 +96,16 @@ void BSPRenderer::Render(const FPSCamera& camera) {
         m_shader->SetVec3("u_Color", Vec3(1.0f));
         m_shader->SetFloat("u_Alpha", 1.0f);  // Default opaque
         m_shader->SetInt("hasDiffuseTexture", 0);
+        
+        // Set texture sampler units
+        m_shader->SetInt("diffuseTexture", 0);
+        m_shader->SetInt("normalMapTexture", 2);
+        m_shader->SetInt("hasNormalMap", 0);  // Will be set per-face in DrawFace
+        
+        // Default lighting uniforms for normal mapped surfaces
+        m_shader->SetVec3("u_LightDir", glm::normalize(Vec3(0.5f, 1.0f, 0.3f)));
+        m_shader->SetVec3("u_LightColor", Vec3(1.0f, 0.98f, 0.95f));
+        m_shader->SetVec3("u_AmbientColor", Vec3(0.15f, 0.15f, 0.2f));
     } else {
         // Fall back to dynamic lighting if no lightmap
         m_shader->SetInt("hasLightmap", 0);
@@ -104,6 +114,11 @@ void BSPRenderer::Render(const FPSCamera& camera) {
         m_shader->SetVec3("u_LightDir", glm::normalize(Vec3(0.5f, 1.0f, 0.3f)));
         m_shader->SetVec3("u_LightColor", Vec3(1.0f, 0.98f, 0.95f));
         m_shader->SetVec3("u_AmbientColor", Vec3(0.15f, 0.15f, 0.2f));
+        
+        // Set texture sampler units
+        m_shader->SetInt("diffuseTexture", 0);
+        m_shader->SetInt("normalMapTexture", 2);
+        m_shader->SetInt("hasNormalMap", 0);  // Will be set per-face in DrawFace
     }
 
     // Render BSP - ALWAYS use real-time frustum culling
@@ -137,7 +152,14 @@ bool BSPRenderer::InitializeShaders() {
     if (!m_shader) {
         m_shader = std::make_shared<Shader>();
         // Try loading the dedicated lightmap shader first
-        if (!m_shader->LoadFromFiles("assets/shaders/bsp_lightmap.vert", "assets/shaders/bsp_lightmap.frag")) {
+#ifdef ASSETS_DIR
+        std::string vertPath = std::string(ASSETS_DIR) + "/shaders/bsp_lightmap.vert";
+        std::string fragPath = std::string(ASSETS_DIR) + "/shaders/bsp_lightmap.frag";
+#else
+        std::string vertPath = "assets/shaders/bsp_lightmap.vert";
+        std::string fragPath = "assets/shaders/bsp_lightmap.frag";
+#endif
+        if (!m_shader->LoadFromFiles(vertPath, fragPath)) {
             LOG_WARNING("BSPRenderer", "Failed to load lightmap shader, trying default mesh shader");
             if (!m_shader->LoadFromFiles("assets/shaders/mesh.vert", "assets/shaders/mesh.frag")) {
                 LOG_ERROR("BSPRenderer", "Failed to load any shader for BSP rendering");

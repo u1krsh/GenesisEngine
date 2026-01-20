@@ -15,80 +15,37 @@ uniform sampler2D normalMapTexture;  // Texture unit 2
 
 // Material
 uniform vec3 u_Color;
-uniform float u_Alpha;
-uniform bool hasDiffuseTexture;
-uniform bool hasLightmap;
-uniform bool hasNormalMap;
-
-// Lighting (for normal mapped surfaces)
-uniform vec3 u_LightDir;
-uniform vec3 u_LightColor;
-uniform vec3 u_AmbientColor;
+uniform int hasDiffuseTexture;
+uniform int hasLightmap;
+uniform int hasNormalMap;
 
 void main() {
-    // Default to fully opaque
-    float alpha = 1.0;
+    // DEBUG: If hasNormalMap is set, output SOLID RED - unmissable!
+    if (hasNormalMap != 0) {
+        FragColor = vec4(1.0, 0.0, 0.0, 1.0); // SOLID RED
+        return;
+    }
     
-    // Diffuse color from texture or base color
+    // Normal path for surfaces without normal maps
+    float alpha = 1.0;
     vec3 diffuse = u_Color * VertexColor;
     
-    if (hasDiffuseTexture) {
+    if (hasDiffuseTexture != 0) {
         vec4 texColor = texture(diffuseTexture, TexCoord);
         diffuse *= texColor.rgb;
-        
-        // Use texture alpha directly - transparent PNG parts become transparent
         alpha = texColor.a;
     }
     
-    // Discard fully transparent pixels
     if (alpha < 0.01) {
         discard;
     }
     
-    // Normal mapping
-    vec3 normal = TBN[2]; // Default to vertex normal (third column of TBN is N)
-    
-    if (hasNormalMap) {
-        // Sample normal map (stored in tangent space, range [0,1])
-        vec3 normalSample = texture(normalMapTexture, TexCoord).rgb;
-        
-        // Convert from [0,1] to [-1,1] range
-        normalSample = normalSample * 2.0 - 1.0;
-        
-        // Transform from tangent space to world space using TBN matrix
-        normal = normalize(TBN * normalSample);
-    }
-    
-    // Lightmap (pre-baked lighting)
-    vec3 light = vec3(1.0);  // Full brightness fallback
-    
-    if (hasLightmap) {
+    vec3 light = vec3(1.0);
+    if (hasLightmap != 0) {
         light = texture(lightmapTexture, LightmapCoord).rgb;
-        
-        // If we have normal map, apply additional directional shading
-        if (hasNormalMap) {
-            // Simple directional component based on normal map
-            vec3 lightDir = normalize(u_LightDir);
-            float NdotL = max(dot(normal, -lightDir), 0.0);
-            
-            // Blend lightmap with normal-mapped directional lighting
-            // This adds surface detail while preserving baked shadows
-            vec3 directional = u_LightColor * NdotL * 0.3;
-            light = light + directional;
-        }
-    } else {
-        // No lightmap - use dynamic lighting with normal mapping
-        if (hasNormalMap) {
-            vec3 lightDir = normalize(u_LightDir);
-            float NdotL = max(dot(normal, -lightDir), 0.0);
-            light = u_AmbientColor + u_LightColor * NdotL;
-        }
     }
     
-    // Final = diffuse * light
     vec3 result = diffuse * light;
-    
-    // Gamma correction
     result = pow(result, vec3(1.0 / 2.2));
     
     FragColor = vec4(result, alpha);

@@ -643,6 +643,20 @@ void BSPTree::DrawFace(const BSPFace& face, Shader& shader) {
             if (normalSlot && normalSlot->texture) {
                 normalSlot->texture->Bind(2);
                 hasNormalMap = true;
+                // Log first time a normal map is bound
+                static std::unordered_set<std::string> loggedNormalMats;
+                if (loggedNormalMats.find(matName) == loggedNormalMats.end()) {
+                    std::cout << "[DrawFace] BINDING NORMAL MAP for: " << matName << std::endl;
+                    LOG_INFO("BSPTree", "DrawFace: Binding normal map for material '" + matName + "'");
+                    loggedNormalMats.insert(matName);
+                }
+            } else {
+                // Log first time a material without normal map is found
+                static std::unordered_set<std::string> loggedNoNormalMats;
+                if (loggedNoNormalMats.find(matName) == loggedNoNormalMats.end()) {
+                    std::cout << "[DrawFace] NO NORMAL MAP for: " << matName << std::endl;
+                    loggedNoNormalMats.insert(matName);
+                }
             }
         }
     }

@@ -554,11 +554,15 @@ void MapLoader::BuildBrush(Brush& brush) {
                         size_t dotPos = basePath.rfind('.');
                         if (dotPos != std::string::npos) {
                             std::string normalPath = basePath.substr(0, dotPos) + "_normal" + basePath.substr(dotPos);
+                            std::cout << "[NormalMap] Trying to load: " << normalPath << std::endl;
                             auto normalMap = texLib.Load(normalPath);
                             if (normalMap) {
                                 brush.material->SetTexture("u_NormalTexture", normalMap, 2);
                                 brush.material->SetInt("u_HasNormalMap", 1);
-                                LOG_DEBUG("MapLoader", "Auto-detected normal map: " + normalPath);
+                                std::cout << "[NormalMap] SUCCESS: Loaded normal map for " << brush.materialName << std::endl;
+                                LOG_INFO("MapLoader", "Auto-detected normal map: " + normalPath);
+                            } else {
+                                std::cout << "[NormalMap] FAILED: No normal map found at " << normalPath << std::endl;
                             }
                         }
                     }
