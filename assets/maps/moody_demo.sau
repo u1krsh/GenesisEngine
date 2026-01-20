@@ -94,9 +94,9 @@ brush {
     position = -15 5 15
     size = 4 10 4
     shape = cube
-    material = bricks/brickwall014g.png
+    material = bricks/brickwall025d.png
     shader_type = standard
-    normal_map = bricks/brickwall014g_normal.png
+    normal_map = bricks/brickwall025d_normal.png
 }
 
 brush {

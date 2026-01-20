@@ -305,6 +305,17 @@ void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
     m_currentProjMatrix = camera.GetProjectionMatrix();
     m_currentCameraPos = camPos;
 
+    // Set lighting uniforms for normal mapping
+    shader.Bind();
+    // Light direction should be normalized and point FROM surface TO light
+    Vec3 lightDir = glm::normalize(Vec3(0.5f, 1.0f, 0.3f));
+    shader.SetVec3("u_LightDir", lightDir);
+    shader.SetVec3("u_LightColor", Vec3(1.5f, 1.4f, 1.3f));  // Brighter warm white light
+    shader.SetVec3("u_AmbientColor", Vec3(0.2f, 0.25f, 0.3f));  // Cool ambient
+    shader.SetVec3("u_ViewPos", camPos);  // Camera position for specular
+    shader.SetInt("normalMapTexture", 2);  // Normal map is on texture unit 2
+    shader.SetInt("u_DebugNormalMap", 0);  // 0=off, 1=world normals, 2=tangent normals, 3=NdotL
+
     // Two-pass global rendering for proper transparency:
     // Pass 1: Render all OPAQUE faces (skip glass)
     m_renderingGlassPass = false;
