@@ -25,7 +25,7 @@
 using namespace Genesis;
 
 // ============================================================================
-// Game State
+// Game State Changes
 // ============================================================================
 static DebugRenderer g_debugRenderer;
 static std::shared_ptr<Shader> g_debugShader;
