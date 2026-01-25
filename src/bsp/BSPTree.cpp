@@ -312,9 +312,13 @@ void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
     shader.SetVec3("u_LightDir", lightDir);
     shader.SetVec3("u_LightColor", Vec3(1.5f, 1.4f, 1.3f));  // Brighter warm white light
     shader.SetVec3("u_AmbientColor", Vec3(0.2f, 0.25f, 0.3f));  // Cool ambient
-    shader.SetVec3("u_ViewPos", camPos);  // Camera position for specular
+    shader.SetVec3("u_ViewPos", camPos);  // Camera position for specular/POM
     shader.SetInt("normalMapTexture", 2);  // Normal map is on texture unit 2
     shader.SetInt("u_DebugNormalMap", 0);  // 0=off, 1=world normals, 2=tangent normals, 3=NdotL
+    
+    // Parallax Occlusion Mapping settings
+    shader.SetInt("u_EnablePOM", 1);       // Enable parallax occlusion mapping
+    shader.SetFloat("u_HeightScale", 0.05f);  // Depth scale (0.03-0.1 works well)
 
     // Two-pass global rendering for proper transparency:
     // Pass 1: Render all OPAQUE faces (skip glass)
