@@ -689,7 +689,7 @@ void MapLoader::BuildBrush(Brush& brush) {
         if (!brush.normalMapPath.empty()) {
             auto normalMap = TextureLibrary::Instance().Load(brush.normalMapPath);
             if (normalMap) {
-                brush.material->SetTexture("u_NormalTexture", normalMap, 1);
+                brush.material->SetTexture("u_NormalTexture", normalMap, 2);
                 brush.material->SetInt("u_HasNormalMap", 1);
             }
         }

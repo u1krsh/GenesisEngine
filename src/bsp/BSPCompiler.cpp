@@ -14,6 +14,28 @@ using Vec4 = glm::vec4;
 using Mat4 = glm::mat4;
 
 // ============================================================================
+// Helper: Compute tangent vector from normal (for normal mapping TBN matrix)
+// ============================================================================
+static Vec3 ComputeTangentFromNormal(const Vec3& normal) {
+    // Choose a reference vector that isn't parallel to the normal
+    Vec3 ref = std::abs(normal.y) < 0.9f ? Vec3(0.0f, 1.0f, 0.0f) : Vec3(1.0f, 0.0f, 0.0f);
+    // Compute tangent as perpendicular to both normal and reference
+    Vec3 tangent = glm::normalize(glm::cross(normal, ref));
+    return tangent;
+}
+
+// Helper: Create a BSPVertex with automatically computed tangent
+static BSPVertex MakeVertex(const Vec3& pos, const Vec3& normal, const Vec2& uv) {
+    BSPVertex v;
+    v.position = pos;
+    v.normal = normal;
+    v.texCoord = uv;
+    v.lightmapCoord = Vec2(0.0f);
+    v.tangent = ComputeTangentFromNormal(normal);
+    return v;
+}
+
+// ============================================================================
 // CompileFace helpers
 // ============================================================================
 
@@ -387,9 +409,9 @@ void BSPCompiler::GenerateSphereFaces(const Brush& brush, uint32_t brushIndex, s
                 Vec3 faceNormal = glm::normalize(n0 + n2 + n3);
                 face.plane = BSPPlane(faceNormal, p0);
 
-                face.vertices.push_back({p0, n0, Vec2(phi1 / (2*PI), theta1 / PI)});
-                face.vertices.push_back({p2, n2, Vec2(phi2 / (2*PI), theta2 / PI)});
-                face.vertices.push_back({p3, n3, Vec2(phi1 / (2*PI), theta2 / PI)});
+                face.vertices.push_back(MakeVertex(p0, n0, Vec2(phi1 / (2*PI), theta1 / PI)));
+                face.vertices.push_back(MakeVertex(p2, n2, Vec2(phi2 / (2*PI), theta2 / PI)));
+                face.vertices.push_back(MakeVertex(p3, n3, Vec2(phi1 / (2*PI), theta2 / PI)));
 
                 outFaces.push_back(std::move(face));
             } else if (ring == rings - 1) {
@@ -401,9 +423,9 @@ void BSPCompiler::GenerateSphereFaces(const Brush& brush, uint32_t brushIndex, s
                 Vec3 faceNormal = glm::normalize(n0 + n1 + n2);
                 face.plane = BSPPlane(faceNormal, p0);
 
-                face.vertices.push_back({p0, n0, Vec2(phi1 / (2*PI), theta1 / PI)});
-                face.vertices.push_back({p1, n1, Vec2(phi2 / (2*PI), theta1 / PI)});
-                face.vertices.push_back({p2, n2, Vec2(phi2 / (2*PI), theta2 / PI)});
+                face.vertices.push_back(MakeVertex(p0, n0, Vec2(phi1 / (2*PI), theta1 / PI)));
+                face.vertices.push_back(MakeVertex(p1, n1, Vec2(phi2 / (2*PI), theta1 / PI)));
+                face.vertices.push_back(MakeVertex(p2, n2, Vec2(phi2 / (2*PI), theta2 / PI)));
 
                 outFaces.push_back(std::move(face));
             } else {
@@ -415,10 +437,10 @@ void BSPCompiler::GenerateSphereFaces(const Brush& brush, uint32_t brushIndex, s
                 Vec3 faceNormal = glm::normalize(n0 + n1 + n2 + n3);
                 face.plane = BSPPlane(faceNormal, p0);
 
-                face.vertices.push_back({p0, n0, Vec2(phi1 / (2*PI), theta1 / PI)});
-                face.vertices.push_back({p1, n1, Vec2(phi2 / (2*PI), theta1 / PI)});
-                face.vertices.push_back({p2, n2, Vec2(phi2 / (2*PI), theta2 / PI)});
-                face.vertices.push_back({p3, n3, Vec2(phi1 / (2*PI), theta2 / PI)});
+                face.vertices.push_back(MakeVertex(p0, n0, Vec2(phi1 / (2*PI), theta1 / PI)));
+                face.vertices.push_back(MakeVertex(p1, n1, Vec2(phi2 / (2*PI), theta1 / PI)));
+                face.vertices.push_back(MakeVertex(p2, n2, Vec2(phi2 / (2*PI), theta2 / PI)));
+                face.vertices.push_back(MakeVertex(p3, n3, Vec2(phi1 / (2*PI), theta2 / PI)));
 
                 outFaces.push_back(std::move(face));
             }
@@ -462,10 +484,10 @@ void BSPCompiler::GenerateCylinderFaces(const Brush& brush, uint32_t brushIndex,
         face.brushIndex = brushIndex;
         face.plane = BSPPlane(glm::normalize(n0 + n1), (p0 + p2) * 0.5f);
 
-        face.vertices.push_back({p0, n0, Vec2(phi1 / (2*PI), 0)});
-        face.vertices.push_back({p1, n1, Vec2(phi2 / (2*PI), 0)});
-        face.vertices.push_back({p2, n1, Vec2(phi2 / (2*PI), 1)});
-        face.vertices.push_back({p3, n0, Vec2(phi1 / (2*PI), 1)});
+        face.vertices.push_back(MakeVertex(p0, n0, Vec2(phi1 / (2*PI), 0)));
+        face.vertices.push_back(MakeVertex(p1, n1, Vec2(phi2 / (2*PI), 0)));
+        face.vertices.push_back(MakeVertex(p2, n1, Vec2(phi2 / (2*PI), 1)));
+        face.vertices.push_back(MakeVertex(p3, n0, Vec2(phi1 / (2*PI), 1)));
 
         outFaces.push_back(std::move(face));
     }
@@ -479,7 +501,7 @@ void BSPCompiler::GenerateCylinderFaces(const Brush& brush, uint32_t brushIndex,
     for (int seg = 0; seg < segments; seg++) {
         float phi = 2.0f * PI * seg / segments;
         Vec3 p = pos + Vec3(scale.x * std::cos(phi), scale.y, scale.z * std::sin(phi));
-        topFace.vertices.push_back({p, Vec3(0, 1, 0), Vec2(std::cos(phi) * 0.5f + 0.5f, std::sin(phi) * 0.5f + 0.5f)});
+        topFace.vertices.push_back(MakeVertex(p, Vec3(0, 1, 0), Vec2(std::cos(phi) * 0.5f + 0.5f, std::sin(phi) * 0.5f + 0.5f)));
     }
     outFaces.push_back(std::move(topFace));
 
@@ -492,7 +514,7 @@ void BSPCompiler::GenerateCylinderFaces(const Brush& brush, uint32_t brushIndex,
     for (int seg = segments - 1; seg >= 0; seg--) {
         float phi = 2.0f * PI * seg / segments;
         Vec3 p = pos + Vec3(scale.x * std::cos(phi), -scale.y, scale.z * std::sin(phi));
-        bottomFace.vertices.push_back({p, Vec3(0, -1, 0), Vec2(std::cos(phi) * 0.5f + 0.5f, std::sin(phi) * 0.5f + 0.5f)});
+        bottomFace.vertices.push_back(MakeVertex(p, Vec3(0, -1, 0), Vec2(std::cos(phi) * 0.5f + 0.5f, std::sin(phi) * 0.5f + 0.5f)));
     }
     outFaces.push_back(std::move(bottomFace));
 }
@@ -540,9 +562,9 @@ void BSPCompiler::GenerateConeFaces(const Brush& brush, uint32_t brushIndex, std
         Vec3 n1 = glm::normalize(Vec3(c1 * std::cos(slopeAngle), std::sin(slopeAngle), s1 * std::cos(slopeAngle)));
         Vec3 n2 = glm::normalize(Vec3(c2 * std::cos(slopeAngle), std::sin(slopeAngle), s2 * std::cos(slopeAngle)));
 
-        face.vertices.push_back({apex, glm::normalize(n1 + n2), Vec2(0.5f, 1)});
-        face.vertices.push_back({p1, n1, Vec2(phi1 / (2*PI), 0)});
-        face.vertices.push_back({p2, n2, Vec2(phi2 / (2*PI), 0)});
+        face.vertices.push_back(MakeVertex(apex, glm::normalize(n1 + n2), Vec2(0.5f, 1)));
+        face.vertices.push_back(MakeVertex(p1, n1, Vec2(phi1 / (2*PI), 0)));
+        face.vertices.push_back(MakeVertex(p2, n2, Vec2(phi2 / (2*PI), 0)));
 
         outFaces.push_back(std::move(face));
     }
@@ -556,7 +578,7 @@ void BSPCompiler::GenerateConeFaces(const Brush& brush, uint32_t brushIndex, std
     for (int seg = segments - 1; seg >= 0; seg--) {
         float phi = 2.0f * PI * seg / segments;
         Vec3 p = pos + Vec3(scale.x * std::cos(phi), -scale.y, scale.z * std::sin(phi));
-        bottomFace.vertices.push_back({p, Vec3(0, -1, 0), Vec2(std::cos(phi) * 0.5f + 0.5f, std::sin(phi) * 0.5f + 0.5f)});
+        bottomFace.vertices.push_back(MakeVertex(p, Vec3(0, -1, 0), Vec2(std::cos(phi) * 0.5f + 0.5f, std::sin(phi) * 0.5f + 0.5f)));
     }
     outFaces.push_back(std::move(bottomFace));
 }
@@ -721,10 +743,19 @@ void BSPCompiler::SplitFace(const CompileFace& input, const BSPPlane& plane, Com
             // Calculate intersection
             float t = d1 / (d1 - d2);
             Vec3 p = v1.position + (v2.position - v1.position) * t;
-            Vec3 n = glm::normalize(v1.normal + (v2.normal - v1.normal) * t); // Simple linear interpolate for normal
+            Vec3 n = glm::normalize(v1.normal + (v2.normal - v1.normal) * t);
             Vec2 uv = v1.texCoord + (v2.texCoord - v1.texCoord) * t;
+            Vec2 lmUV = v1.lightmapCoord + (v2.lightmapCoord - v1.lightmapCoord) * t;
+            Vec3 tang = glm::normalize(v1.tangent + (v2.tangent - v1.tangent) * t);
+            Vec3 col = v1.color + (v2.color - v1.color) * t;
             
-            BSPVertex intersectionVert = { p, n, uv };
+            BSPVertex intersectionVert;
+            intersectionVert.position = p;
+            intersectionVert.normal = n;
+            intersectionVert.texCoord = uv;
+            intersectionVert.lightmapCoord = lmUV;
+            intersectionVert.tangent = tang;
+            intersectionVert.color = col;
             outFront.vertices.push_back(intersectionVert);
             outBack.vertices.push_back(intersectionVert);
         }
