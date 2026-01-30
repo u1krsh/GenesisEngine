@@ -319,6 +319,10 @@ void BSPTree::Render(const FPSCamera& camera, Shader& shader) {
     // Parallax Occlusion Mapping settings
     shader.SetInt("u_EnablePOM", 1);       // Enable parallax occlusion mapping
     shader.SetFloat("u_HeightScale", 0.05f);  // Depth scale (0.03-0.1 works well)
+    
+    // Normal map enhancement settings
+    shader.SetFloat("u_NormalStrength", 1.2f);  // Slightly stronger normal effect
+    shader.SetFloat("u_Roughness", 0.4f);       // Moderate roughness for nice specular
 
     // Two-pass global rendering for proper transparency:
     // Pass 1: Render all OPAQUE faces (skip glass)

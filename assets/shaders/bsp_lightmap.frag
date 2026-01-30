@@ -25,6 +25,12 @@ uniform int hasLightmap;
 uniform int hasNormalMap;
 
 // =====================================================
+// Normal Map Enhancement Settings
+// =====================================================
+uniform float u_NormalStrength;   // Normal map intensity (default: 1.0, range 0.0-2.0)
+uniform float u_Roughness;        // Surface roughness for specular (default: 0.5)
+
+// =====================================================
 // Parallax Occlusion Mapping Settings
 // =====================================================
 uniform float u_HeightScale;      // Depth of the effect (default: 0.05)
@@ -164,12 +170,27 @@ void main() {
     // Normal Mapping with parallax-adjusted UVs
     // =====================================================
     vec3 N;
+    float normalStrength = max(u_NormalStrength, 0.0);  // Clamp to positive
+    if (normalStrength == 0.0) normalStrength = 1.0;    // Default if not set
+    
+    // Estimate ambient occlusion from normal map height variance
+    float ao = 1.0;
     
     if (hasNormalMap != 0) {
         vec3 normalTangent = texture(normalMapTexture, texCoords).rgb;
         normalTangent = normalTangent * 2.0 - 1.0;
-        normalTangent.y = -normalTangent.y;  // DirectX format
+        normalTangent.y = -normalTangent.y;  // DirectX format conversion
+        
+        // Apply normal strength - blend between flat normal (0,0,1) and sampled normal
+        normalTangent.xy *= normalStrength;
+        normalTangent = normalize(normalTangent);
+        
         N = normalize(TBN * normalTangent);
+        
+        // Estimate AO from normal map - surfaces facing away from up have more occlusion
+        // The more perpendicular the tangent-space normal, the more it's in a crevice
+        float normalHeight = normalTangent.z;  // 1.0 = flat, <1.0 = angled
+        ao = mix(0.6, 1.0, normalHeight * normalHeight);  // Subtle darkening in crevices
         
         // Debug visualization
         if (u_DebugNormalMap == 1) {
@@ -178,27 +199,41 @@ void main() {
         } else if (u_DebugNormalMap == 2) {
             FragColor = vec4(normalTangent * 0.5 + 0.5, 1.0);
             return;
+        } else if (u_DebugNormalMap == 4) {
+            // Debug: Show estimated AO
+            FragColor = vec4(vec3(ao), 1.0);
+            return;
         }
     } else {
         N = normalize(TBN[2]);
     }
     
     // =====================================================
-    // Lighting (Blinn-Phong)
+    // Enhanced Lighting (Blinn-Phong with roughness)
     // =====================================================
     vec3 L = normalize(u_LightDir);
     vec3 V = viewDirWorld;
     vec3 H = normalize(L + V);
     
     float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.01);  // Avoid division by zero
     
     if (u_DebugNormalMap == 3) {
         FragColor = vec4(vec3(NdotL), 1.0);
         return;
     }
     
+    // Roughness-based specular (physically-based approximation)
+    float roughness = clamp(u_Roughness, 0.04, 1.0);
+    if (roughness == 0.0) roughness = 0.5;  // Default if not set
+    
     float NdotH = max(dot(N, H), 0.0);
-    float specular = pow(NdotH, 64.0);
+    // Convert roughness to specular power (higher roughness = lower power = broader highlight)
+    float specPower = mix(256.0, 4.0, roughness * roughness);  
+    float specular = pow(NdotH, specPower);
+    
+    // Fresnel-like rim enhancement for grazing angles
+    float fresnel = pow(1.0 - NdotV, 3.0) * 0.3;
     
     // =====================================================
     // Self-Shadowing (optional, adds depth)
@@ -210,7 +245,7 @@ void main() {
     }
     
     // =====================================================
-    // Combine Lighting
+    // Combine Lighting with improved balance
     // =====================================================
     vec3 lightmapLight = vec3(1.0);
     if (hasLightmap != 0) {
@@ -220,12 +255,20 @@ void main() {
     vec3 finalLighting;
     
     if (hasNormalMap != 0) {
-        vec3 ambient = u_AmbientColor * lightmapLight * 0.3;
-        vec3 diffuse = u_LightColor * NdotL * shadowFactor * 0.7;
-        vec3 spec = u_LightColor * specular * shadowFactor * 0.4;
-        vec3 lightmapContrib = lightmapLight * (0.4 + 0.6 * NdotL * shadowFactor);
+        // Enhanced ambient with AO
+        vec3 ambient = u_AmbientColor * lightmapLight * 0.25 * ao;
         
-        finalLighting = ambient + lightmapContrib * 0.5 + diffuse + spec;
+        // Diffuse with wrapped lighting for softer falloff
+        float wrappedNdotL = (NdotL + 0.2) / 1.2;  // Soft wrap
+        vec3 diffuse = u_LightColor * wrappedNdotL * shadowFactor * 0.65;
+        
+        // Specular with fresnel boost
+        vec3 spec = u_LightColor * (specular + fresnel) * shadowFactor * (1.0 - roughness) * 0.5;
+        
+        // Lightmap integration - modulated by normal response
+        vec3 lightmapContrib = lightmapLight * (0.35 + 0.65 * NdotL * shadowFactor) * ao;
+        
+        finalLighting = ambient + lightmapContrib * 0.55 + diffuse + spec;
     } else {
         finalLighting = lightmapLight;
     }
