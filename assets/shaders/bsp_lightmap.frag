@@ -233,7 +233,7 @@ void main() {
     float specular = pow(NdotH, specPower);
     
     // Fresnel-like rim enhancement for grazing angles
-    float fresnel = pow(1.0 - NdotV, 3.0) * 0.3;
+    float fresnel = pow(1.0 - NdotV, 3.0) * 0.35;
     
     // =====================================================
     // Self-Shadowing (optional, adds depth)
