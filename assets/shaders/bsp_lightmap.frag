@@ -263,7 +263,7 @@ void main() {
         vec3 diffuse = u_LightColor * wrappedNdotL * shadowFactor * 0.65;
         
         // Specular with fresnel boost
-        vec3 spec = u_LightColor * (specular + fresnel) * shadowFactor * (1.0 - roughness) * 0.5;
+        vec3 spec = u_LightColor * (specular + fresnel) * shadowFactor * (1.0 - roughness) * 0.45;
         
         // Lightmap integration - modulated by normal response
         vec3 lightmapContrib = lightmapLight * (0.35 + 0.65 * NdotL * shadowFactor) * ao;
