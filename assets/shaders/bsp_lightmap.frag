@@ -259,7 +259,7 @@ void main() {
         vec3 ambient = u_AmbientColor * lightmapLight * 0.25 * ao;
         
         // Diffuse with wrapped lighting for softer falloff
-        float wrappedNdotL = (NdotL + 0.2) / 1.2;  // Soft wrap
+        float wrappedNdotL = (NdotL + 0.25) / 1.25;  // Soft wrap
         vec3 diffuse = u_LightColor * wrappedNdotL * shadowFactor * 0.65;
         
         // Specular with fresnel boost
