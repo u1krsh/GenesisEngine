@@ -266,7 +266,7 @@ void main() {
         vec3 spec = u_LightColor * (specular + fresnel) * shadowFactor * (1.0 - roughness) * 0.45;
         
         // Lightmap integration - modulated by normal response
-        vec3 lightmapContrib = lightmapLight * (0.35 + 0.65 * NdotL * shadowFactor) * ao;
+        vec3 lightmapContrib = lightmapLight * (0.38 + 0.62 * NdotL * shadowFactor) * ao;
         
         finalLighting = ambient + lightmapContrib * 0.55 + diffuse + spec;
     } else {
