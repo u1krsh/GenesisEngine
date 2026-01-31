@@ -190,7 +190,7 @@ void main() {
         // Estimate AO from normal map - surfaces facing away from up have more occlusion
         // The more perpendicular the tangent-space normal, the more it's in a crevice
         float normalHeight = normalTangent.z;  // 1.0 = flat, <1.0 = angled
-        ao = mix(0.6, 1.0, normalHeight * normalHeight);  // Subtle darkening in crevices
+        ao = mix(0.55, 1.0, normalHeight * normalHeight);  // Subtle darkening in crevices
         
         // Debug visualization
         if (u_DebugNormalMap == 1) {
