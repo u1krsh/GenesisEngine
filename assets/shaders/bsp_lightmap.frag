@@ -268,7 +268,7 @@ void main() {
         // Lightmap integration - modulated by normal response
         vec3 lightmapContrib = lightmapLight * (0.38 + 0.62 * NdotL * shadowFactor) * ao;
         
-        finalLighting = ambient + lightmapContrib * 0.55 + diffuse + spec;
+        finalLighting = ambient + lightmapContrib * 0.58 + diffuse + spec;
     } else {
         finalLighting = lightmapLight;
     }
